@@ -1,5 +1,10 @@
 use std::{collections::VecDeque, fmt::Display, ops::Add};
 
+use crate::interface::EditableText;
+
+pub mod interface;
+pub mod baseline;
+
 #[derive(Debug)]
 struct PieceTable {
     original: String,
@@ -21,9 +26,9 @@ enum NodeKind {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
-struct TextRange {
-    start: usize,
-    end: usize,
+pub struct TextRange {
+    pub start: usize,
+    pub end: usize,
 }
 
 /// Represents an insertion or deletion which can be reverted
@@ -224,6 +229,20 @@ impl PieceTable {
             first_node.range.end -= offset - 1;
             false
         }
+    }
+}
+
+impl EditableText for PieceTable {
+    fn new(string: String) -> Self {
+        PieceTable::new(string)
+    }
+
+    fn insert(&mut self, data: &str, offset: usize) {
+        self.insert(data, offset)
+    }
+
+    fn delete(&mut self, range: TextRange) {
+        self.delete(range)
     }
 }
 
@@ -435,5 +454,81 @@ mod tests {
         piece_table.replace("world", 7);
 
         assert_eq!("hello, world!", piece_table.to_string());
+    }
+}
+
+#[cfg(test)]
+mod property_tests {
+    use crate::baseline::Baseline;
+    use crate::interface::EditableText;
+    use crate::PieceTable;
+    use crate::TextRange;
+    use proptest::prelude::*;
+
+    #[derive(Debug, Clone)]
+    enum Op {
+        Insert(String, usize),
+        Delete(usize, usize),
+    }
+
+    fn do_op<T: EditableText + std::fmt::Display>(
+        doc: &mut T,
+        op: &Op,
+        current_string: &mut String,
+    ) {
+        match op {
+            Op::Insert(text, offset) => {
+                let mut offset = *offset;
+                if offset > current_string.len() {
+                    offset = current_string.len();
+                }
+                doc.insert(text, offset);
+                current_string.insert_str(offset, text);
+            }
+            Op::Delete(start, end) => {
+                let mut start = *start;
+                let mut end = *end;
+                if start > current_string.len() {
+                    start = current_string.len();
+                }
+                if end > current_string.len() {
+                    end = current_string.len();
+                }
+                if start > end {
+                    std::mem::swap(&mut start, &mut end);
+                }
+                doc.delete(TextRange { start, end });
+                current_string.replace_range(start..end, "");
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn compare_implementations(initial_text: String, ops: Vec<Op>) {
+            let mut piece_table = PieceTable::new(initial_text.clone());
+            let mut baseline = Baseline::new(initial_text.clone());
+            let mut current_string = initial_text.clone();
+
+            for op in ops {
+                do_op(&mut piece_table, &op, &mut current_string);
+                do_op(&mut baseline, &op, &mut current_string);
+
+                prop_assert_eq!(piece_table.to_string(), baseline.to_string());
+            }
+        }
+    }
+
+    impl Arbitrary for Op {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                (any::<String>(), any::<usize>()).prop_map(|(s, i)| Op::Insert(s, i)),
+                (any::<usize>(), any::<usize>()).prop_map(|(i, j)| Op::Delete(i, j)),
+            ]
+            .boxed()
+        }
     }
 }
