@@ -110,17 +110,51 @@ impl PieceTable {
 
     pub fn delete(&mut self, range: TextRange) {
         let mut byte_idx = 0;
-        let mut node_idx = 0;
+        let mut start_byte_idx = 0;
+
+        // Since a delete operation can operate on more that one node, we find the range of nodes
+        // which are inside that range.
+        let mut start_idx = 0;
+        let mut end_idx = None;
         for (idx, node) in self.nodes.iter().enumerate() {
             if byte_idx + node.range.len() > range.start {
-                node_idx = idx;
+                start_idx = idx;
+                start_byte_idx = byte_idx;
             }
+
+            if byte_idx + node.range.len() >= range.end && end_idx == None {
+                end_idx = Some(idx);
+            }
+
             byte_idx += node.range.len();
         }
 
-        self.nodes.remove(node_idx);
+        if let Some(end_idx) = end_idx {
+            while start_idx <= end_idx {
+                if self.nodes.get(start_idx).unwrap().range.end < range.end {
+                    println!(
+                        "{} {}",
+                        self.nodes.get(start_idx).unwrap().range.end,
+                        range.end
+                    );
+                    self.nodes.remove(start_idx);
+                } else {
+                    let node = self.nodes.get_mut(start_idx).unwrap();
 
-        // TODO handle multiple nodes inside range
+                    if node.range.start == range.start {
+                        // update range.end
+                        node.range.start = range.end;
+                    } else {
+                        node.range.end += range.end - start_byte_idx - 1;
+                    }
+                }
+
+                start_idx += 1;
+            }
+        } else {
+            // TODO is there any meaningful case where end_idx = None?
+            unreachable!()
+        }
     }
 
     pub fn replace(&mut self, data: &str, offset: TextRange) {}
@@ -155,7 +189,7 @@ impl Display for PieceTable {
 
 impl TextRange {
     fn len(&self) -> usize {
-        self.end - self.end
+        self.end - self.start
     }
 }
 
@@ -253,5 +287,16 @@ mod tests {
         piece_table.delete(TextRange { start: 0, end: 1 });
 
         assert_eq!("b", piece_table.to_string());
+    }
+
+    #[test]
+    fn delete_original_second_half() {
+        let original = "ab";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.delete(TextRange { start: 1, end: 2 });
+
+        assert_eq!("a", piece_table.to_string());
     }
 }
