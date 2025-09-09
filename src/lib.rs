@@ -6,7 +6,7 @@ pub mod interface;
 pub mod baseline;
 
 #[derive(Debug)]
-struct PieceTable {
+pub struct PieceTable {
     original: String,
     added: String,
     nodes: Vec<Node>,
