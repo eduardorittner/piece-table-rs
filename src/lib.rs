@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Add, slice::SliceIndex};
+use std::{fmt::Display, ops::Add};
 
 #[derive(Debug)]
 struct PieceTable {
@@ -25,6 +25,12 @@ struct TextRange {
     end: usize,
 }
 
+impl Node {
+    fn is_in_range(&self, byte_idx: usize, range: &TextRange) -> bool {
+        byte_idx <= range.end && byte_idx + self.range.len() >= range.start
+    }
+}
+
 impl Add<TextRange> for TextRange {
     type Output = TextRange;
 
@@ -36,6 +42,7 @@ impl Add<TextRange> for TextRange {
     }
 }
 
+// TODO define a trait which is trivial to implement for string so we can test against it
 impl PieceTable {
     // Public API
     pub fn new(string: String) -> Self {
@@ -67,33 +74,17 @@ impl PieceTable {
             range: node_range,
         };
 
-        let mut byte_idx = 0;
-        let mut node_idx = 0;
-        for (idx, node) in self.nodes.iter().enumerate() {
-            if byte_idx + node.range.len() > offset {
-                node_idx = idx;
-            }
-            byte_idx += node.range.len();
+        if let Some((node_idx, node_pos)) = self.find_node(offset) {
+            let insert_idx = if self.split_node(node_idx, offset - node_pos) {
+                node_idx + 1
+            } else {
+                node_idx
+            };
+
+            self.nodes.insert(insert_idx, node);
+        } else {
+            self.nodes.push(node);
         }
-
-        // To update
-        let original_node = self.nodes.get(node_idx).unwrap().clone();
-
-        // Update original node
-        self.nodes.get_mut(node_idx).unwrap().range.end = offset;
-
-        // Insert new node
-        self.nodes.insert(node_idx + 1, node);
-
-        // Insert second half of original node
-        let mut second_half = Node {
-            kind: original_node.kind,
-            range: original_node.range,
-        };
-
-        second_half.range.start += offset - original_node.range.start;
-
-        self.nodes.insert(node_idx + 2, second_half);
     }
 
     pub fn insert_end(&mut self, data: &str) {
@@ -109,53 +100,43 @@ impl PieceTable {
     }
 
     pub fn delete(&mut self, range: TextRange) {
-        let mut byte_idx = 0;
-        let mut start_byte_idx = 0;
+        if let Some((start, byte_idx)) = self.find_node(range.start) {
+            self.delete_complete_nodes(start, byte_idx, range);
 
-        // Since a delete operation can operate on more that one node, we find the range of nodes
-        // which are inside that range.
-        let mut start_idx = 0;
-        let mut end_idx = None;
-        for (idx, node) in self.nodes.iter().enumerate() {
-            if byte_idx + node.range.len() > range.start {
-                start_idx = idx;
-                start_byte_idx = byte_idx;
+            dbg!(&self);
+            if let Some(node) = self.nodes.get(start) {
+                assert_eq!(self.find_node(range.start), Some((start, byte_idx)));
+
+                if byte_idx <= range.start && range.end <= byte_idx + node.range.len() {
+                    if self.split_node(start, range.end - byte_idx) {
+                        self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
+                    }
+                }
             }
+        } else {
+            unreachable!()
+        }
+    }
 
-            if byte_idx + node.range.len() >= range.end && end_idx == None {
-                end_idx = Some(idx);
+    /// Deletes all nodes which are entirely contained within the specified range
+    ///
+    /// Any nodes which are only partially in the range will not be deleted and must be dealt with
+    /// by the caller
+    fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: TextRange) {
+        let mut byte_idx = byte_idx;
+
+        while byte_idx < range.end {
+            let node = *self.nodes.get(idx).unwrap();
+
+            if byte_idx >= range.start && byte_idx + node.range.len() <= range.end {
+                self.nodes.remove(idx);
             }
 
             byte_idx += node.range.len();
         }
-
-        if let Some(end_idx) = end_idx {
-            while start_idx <= end_idx {
-                if self.nodes.get(start_idx).unwrap().range.end < range.end {
-                    println!(
-                        "{} {}",
-                        self.nodes.get(start_idx).unwrap().range.end,
-                        range.end
-                    );
-                    self.nodes.remove(start_idx);
-                } else {
-                    let node = self.nodes.get_mut(start_idx).unwrap();
-
-                    if node.range.start == range.start {
-                        // update range.end
-                        node.range.start = range.end;
-                    } else {
-                        node.range.end += range.end - start_byte_idx - 1;
-                    }
-                }
-
-                start_idx += 1;
-            }
-        } else {
-            // TODO is there any meaningful case where end_idx = None?
-            unreachable!()
-        }
     }
+
+    fn delete_node(&mut self, idx: usize, byte_idx: usize, range: TextRange) {}
 
     pub fn replace(&mut self, data: &str, offset: TextRange) {}
 
@@ -164,6 +145,67 @@ impl PieceTable {
     pub fn redo(&mut self, count: usize) {}
 
     pub fn clear_history(&mut self) {}
+
+    fn find_node(&self, offset: usize) -> Option<(usize, usize)> {
+        let mut byte_idx = 0;
+
+        for (idx, node) in self.nodes.iter().enumerate() {
+            if byte_idx + node.range.len() > offset {
+                return Some((idx, byte_idx));
+            }
+            byte_idx += node.range.len();
+        }
+
+        None
+    }
+
+    fn find_node_range(&self, range: TextRange) -> Option<(usize, usize, usize)> {
+        let start = range.start;
+        let end = range.end;
+
+        let mut byte_idx = 0;
+        let mut start_idx = None;
+
+        for (idx, node) in self.nodes.iter().enumerate() {
+            if byte_idx + node.range.len() >= start && start_idx == None {
+                start_idx = Some(idx);
+            }
+            if byte_idx + node.range.len() >= end {
+                return Some((start_idx.unwrap(), idx, byte_idx));
+            }
+            byte_idx += node.range.len();
+        }
+
+        None
+    }
+
+    /// Returns `true` if the node was split, `false` otherwise
+    ///
+    /// There are 3 cases:
+    /// 1. `offset == 0`:
+    ///     In this case, nothing happens since there's nothing to do
+    ///
+    /// 2. `offset >= node.range.len()`:
+    ///     Same as case 1
+    ///
+    /// 3. `offset != 0 && offset < range.len()`:
+    ///     The node is split
+    fn split_node(&mut self, piece_idx: usize, offset: usize) -> bool {
+        let first_node = self.nodes.get_mut(piece_idx).unwrap();
+
+        if offset == 0 {
+            false
+        } else if first_node.range.len() > offset {
+            let mut second_node = first_node.clone();
+            first_node.range.end -= first_node.range.len() - offset;
+            second_node.range.start += offset;
+            self.nodes.insert(piece_idx + 1, second_node);
+            true
+        } else {
+            first_node.range.end -= offset - 1;
+            false
+        }
+    }
 }
 
 impl Display for PieceTable {
@@ -232,7 +274,7 @@ mod tests {
     }
 
     #[test]
-    fn insert_once_in_the_middle() {
+    fn insert_once_middle() {
         let original = "hello!";
         let added = ", world";
 
@@ -240,11 +282,12 @@ mod tests {
 
         piece_table.insert(added, 5);
 
+        assert_eq!(piece_table.nodes.len(), 3);
         assert_eq!("hello, world!", piece_table.to_string());
     }
 
     #[test]
-    fn insert_once_in_the_end() {
+    fn insert_once_end() {
         let original = "hello";
         let added = ", world!";
 
@@ -252,6 +295,7 @@ mod tests {
 
         piece_table.insert(added, 5);
 
+        assert_eq!(piece_table.nodes.len(), 2);
         assert_eq!("hello, world!", piece_table.to_string());
     }
 
@@ -264,6 +308,7 @@ mod tests {
 
         piece_table.insert(added, 0);
 
+        assert_eq!(piece_table.nodes.len(), 2);
         assert_eq!("abc", piece_table.to_string());
     }
 
@@ -298,5 +343,54 @@ mod tests {
         piece_table.delete(TextRange { start: 1, end: 2 });
 
         assert_eq!("a", piece_table.to_string());
+    }
+
+    #[test]
+    fn delete_original_middle() {
+        let original = "abc";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.delete(TextRange { start: 1, end: 2 });
+
+        assert_eq!("ac", piece_table.to_string());
+    }
+
+    #[test]
+    fn delete_original_two_times() {
+        let original = "ab";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.delete(TextRange { start: 0, end: 1 });
+
+        assert_eq!("", piece_table.to_string());
+    }
+
+    #[test]
+    fn add_then_delete() {
+        let original = "ab";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.insert("ab", 0);
+
+        assert_eq!("ab", piece_table.to_string());
+    }
+
+    #[test]
+    fn add_delete_add() {
+        let original = "ab";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.insert("c", 2);
+        piece_table.delete(TextRange { start: 0, end: 3 });
+        piece_table.insert("ab", 0);
+
+        assert_eq!("ab", piece_table.to_string());
     }
 }
