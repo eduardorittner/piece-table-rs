@@ -139,18 +139,13 @@ impl PieceTable {
         if let Some((start, byte_idx)) = self.find_node(range.start) {
             self.delete_complete_nodes(start, byte_idx, range);
 
-            dbg!(&self);
             if let Some(node) = self.nodes.get(start) {
-                assert_eq!(self.find_node(range.start), Some((start, byte_idx)));
-
                 if byte_idx <= range.start && range.end <= byte_idx + node.range.len() {
                     if self.split_node(start, range.end - byte_idx) {
                         self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
                     }
                 }
             }
-        } else {
-            unreachable!()
         }
     }
 
@@ -482,6 +477,9 @@ mod property_tests {
                 if offset > current_string.len() {
                     offset = current_string.len();
                 }
+                while !current_string.is_char_boundary(offset) {
+                    offset = offset.saturating_sub(1);
+                }
                 doc.insert(text, offset);
                 current_string.insert_str(offset, text);
             }
@@ -497,6 +495,13 @@ mod property_tests {
                 if start > end {
                     std::mem::swap(&mut start, &mut end);
                 }
+
+                while !current_string.is_char_boundary(start) {
+                    start = start.saturating_sub(1);
+                }
+                while !current_string.is_char_boundary(end) {
+                    end = end.saturating_sub(1);
+                }
                 doc.delete(TextRange { start, end });
                 current_string.replace_range(start..end, "");
             }
@@ -511,8 +516,9 @@ mod property_tests {
             let mut current_string = initial_text.clone();
 
             for op in ops {
+                let mut baseline_string = current_string.clone();
                 do_op(&mut piece_table, &op, &mut current_string);
-                do_op(&mut baseline, &op, &mut current_string);
+                do_op(&mut baseline, &op, &mut baseline_string);
 
                 prop_assert_eq!(piece_table.to_string(), baseline.to_string());
             }
