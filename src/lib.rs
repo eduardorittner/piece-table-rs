@@ -1,10 +1,11 @@
-use std::{fmt::Display, ops::Add};
+use std::{collections::VecDeque, fmt::Display, ops::Add};
 
 #[derive(Debug)]
 struct PieceTable {
     original: String,
     added: String,
     nodes: Vec<Node>,
+    history: History,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -25,6 +26,49 @@ struct TextRange {
     end: usize,
 }
 
+/// Represents an insertion or deletion which can be reverted
+///
+/// An insert needs to remember where it was inserted (`offset`) and where the string contents are
+/// stored (`buffer_offset`). Note that since `original` is immutable, we know that any insertions
+/// have their content stored in the `added` buffer.
+#[derive(Debug, Clone, Copy)]
+enum Edit {
+    Insert {
+        offset: usize,
+        buffer_offset: usize,
+        len: usize,
+    },
+    Delete {
+        range: TextRange,
+        buffer_offset: usize,
+    },
+}
+
+#[derive(Debug)]
+struct History {
+    undo: VecDeque<Edit>,
+    redo: VecDeque<Edit>,
+    depth: usize,
+    max_depth: usize,
+}
+
+impl Default for History {
+    fn default() -> Self {
+        History::new(1024)
+    }
+}
+
+impl History {
+    fn new(max_depth: usize) -> Self {
+        Self {
+            undo: VecDeque::with_capacity(max_depth),
+            redo: VecDeque::with_capacity(max_depth),
+            depth: 0,
+            max_depth,
+        }
+    }
+}
+
 impl Node {
     fn is_in_range(&self, byte_idx: usize, range: &TextRange) -> bool {
         byte_idx <= range.end && byte_idx + self.range.len() >= range.start
@@ -42,9 +86,7 @@ impl Add<TextRange> for TextRange {
     }
 }
 
-// TODO define a trait which is trivial to implement for string so we can test against it
 impl PieceTable {
-    // Public API
     pub fn new(string: String) -> Self {
         let mut nodes = Vec::new();
         nodes.push(Node {
@@ -59,6 +101,7 @@ impl PieceTable {
             original: string,
             added: String::new(),
             nodes,
+            history: History::default(),
         }
     }
 
@@ -85,18 +128,6 @@ impl PieceTable {
         } else {
             self.nodes.push(node);
         }
-    }
-
-    pub fn insert_end(&mut self, data: &str) {
-        let range = TextRange {
-            start: self.added.as_bytes().len(),
-            end: self.added.as_bytes().len() + data.as_bytes().len(),
-        };
-        self.nodes.push(Node {
-            kind: NodeKind::Added,
-            range,
-        });
-        self.added.extend(data.chars());
     }
 
     pub fn delete(&mut self, range: TextRange) {
@@ -136,9 +167,17 @@ impl PieceTable {
         }
     }
 
-    fn delete_node(&mut self, idx: usize, byte_idx: usize, range: TextRange) {}
-
-    pub fn replace(&mut self, data: &str, offset: TextRange) {}
+    /// Replaces a range with the given string
+    ///
+    /// In order to preserve undo/redo history this is implemented as a delete + insertion, instead
+    /// of a direct replacement.
+    pub fn replace(&mut self, data: &str, offset: usize) {
+        self.delete(TextRange {
+            start: offset,
+            end: offset + data.len(),
+        });
+        self.insert(data, offset);
+    }
 
     pub fn undo(&mut self, count: usize) {}
 
@@ -152,26 +191,6 @@ impl PieceTable {
         for (idx, node) in self.nodes.iter().enumerate() {
             if byte_idx + node.range.len() > offset {
                 return Some((idx, byte_idx));
-            }
-            byte_idx += node.range.len();
-        }
-
-        None
-    }
-
-    fn find_node_range(&self, range: TextRange) -> Option<(usize, usize, usize)> {
-        let start = range.start;
-        let end = range.end;
-
-        let mut byte_idx = 0;
-        let mut start_idx = None;
-
-        for (idx, node) in self.nodes.iter().enumerate() {
-            if byte_idx + node.range.len() >= start && start_idx == None {
-                start_idx = Some(idx);
-            }
-            if byte_idx + node.range.len() >= end {
-                return Some((start_idx.unwrap(), idx, byte_idx));
             }
             byte_idx += node.range.len();
         }
@@ -252,7 +271,7 @@ mod tests {
         let mut piece_table = PieceTable::new(original.to_string());
 
         let added = "world!";
-        piece_table.insert_end("world!");
+        piece_table.insert(added, original.len());
 
         assert_eq!(original.to_owned() + added, piece_table.to_string());
     }
@@ -264,8 +283,8 @@ mod tests {
         let second = "!";
 
         let mut piece_table = PieceTable::new(original.to_string());
-        piece_table.insert_end(added);
-        piece_table.insert_end(second);
+        piece_table.insert(added, original.len());
+        piece_table.insert(second, original.len() + added.len());
 
         assert_eq!(
             original.to_owned() + added + second,
@@ -392,5 +411,16 @@ mod tests {
         piece_table.insert("ab", 0);
 
         assert_eq!("ab", piece_table.to_string());
+    }
+
+    #[test]
+    fn replace() {
+        let original = "hello, hello!";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.replace("world", 7);
+
+        assert_eq!("hello, world!", piece_table.to_string());
     }
 }
