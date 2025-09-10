@@ -401,6 +401,19 @@ mod tests {
     }
 
     #[test]
+    fn add_at_start() {
+        let original = "world!";
+
+        let mut piece_table = PieceTable::new(original.to_string());
+
+        piece_table.insert("hello", 0);
+        piece_table.insert(", ", 5);
+
+        assert_eq!("hello, world!", piece_table.to_string());
+        assert_eq!(3, piece_table.nodes.len());
+    }
+
+    #[test]
     fn add_delete_add() {
         let original = "ab";
 
