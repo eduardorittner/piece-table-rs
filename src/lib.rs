@@ -153,18 +153,31 @@ impl PieceTable {
     /// Deletes all nodes which are entirely contained within the specified range
     ///
     /// Any nodes which are only partially in the range will not be deleted and must be dealt with
-    /// by the caller
+    /// by the caller.
     fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: TextRange) {
+        let mut start = None;
+        let mut end = None;
         let mut byte_idx = byte_idx;
 
-        while byte_idx < range.end {
-            let node = *self.nodes.get(idx).unwrap();
+        for i in idx..self.nodes.len() {
+            let node = self.nodes[i];
+            let node_len = node.range.len();
 
-            if byte_idx >= range.start && byte_idx + node.range.len() <= range.end {
-                self.nodes.remove(idx);
+            if byte_idx >= range.start && byte_idx + node_len <= range.end {
+                if start.is_none() {
+                    start = Some(i);
+                }
+                end = Some(i);
             }
 
-            byte_idx += node.range.len();
+            byte_idx += node_len;
+            if byte_idx >= range.end {
+                break;
+            }
+        }
+
+        if let (Some(first), Some(last)) = (start, end) {
+            self.nodes.drain(first..=last);
         }
     }
 
