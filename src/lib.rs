@@ -456,6 +456,7 @@ mod tests {
 mod property_tests {
     use crate::baseline::Baseline;
     use crate::interface::EditableText;
+    use crate::line_buffer::LineBuffer;
     use crate::PieceTable;
     use crate::TextRange;
     use proptest::prelude::*;
@@ -469,41 +470,39 @@ mod property_tests {
     fn do_op<T: EditableText + std::fmt::Display>(
         doc: &mut T,
         op: &Op,
-        current_string: &mut String,
+        string_before_op: &String,
     ) {
         match op {
             Op::Insert(text, offset) => {
                 let mut offset = *offset;
-                if offset > current_string.len() {
-                    offset = current_string.len();
+                if offset > string_before_op.len() {
+                    offset = string_before_op.len();
                 }
-                while !current_string.is_char_boundary(offset) {
+                while !string_before_op.is_char_boundary(offset) {
                     offset = offset.saturating_sub(1);
                 }
                 doc.insert(text, offset);
-                current_string.insert_str(offset, text);
             }
             Op::Delete(start, end) => {
                 let mut start = *start;
                 let mut end = *end;
-                if start > current_string.len() {
-                    start = current_string.len();
+                if start > string_before_op.len() {
+                    start = string_before_op.len();
                 }
-                if end > current_string.len() {
-                    end = current_string.len();
+                if end > string_before_op.len() {
+                    end = string_before_op.len();
                 }
                 if start > end {
                     std::mem::swap(&mut start, &mut end);
                 }
 
-                while !current_string.is_char_boundary(start) {
+                while !string_before_op.is_char_boundary(start) {
                     start = start.saturating_sub(1);
                 }
-                while !current_string.is_char_boundary(end) {
+                while !string_before_op.is_char_boundary(end) {
                     end = end.saturating_sub(1);
                 }
                 doc.delete(TextRange { start, end });
-                current_string.replace_range(start..end, "");
             }
         }
     }
@@ -513,14 +512,16 @@ mod property_tests {
         fn compare_implementations(initial_text: String, ops: Vec<Op>) {
             let mut piece_table = PieceTable::new(initial_text.clone());
             let mut baseline = Baseline::new(initial_text.clone());
-            let mut current_string = initial_text.clone();
+            let mut line_buffer = LineBuffer::new(initial_text.clone());
 
             for op in ops {
-                let mut baseline_string = current_string.clone();
-                do_op(&mut piece_table, &op, &mut current_string);
-                do_op(&mut baseline, &op, &mut baseline_string);
+                let s = piece_table.to_string();
+                do_op(&mut piece_table, &op, &s);
+                do_op(&mut baseline, &op, &s);
+                do_op(&mut line_buffer, &op, &s);
 
-                prop_assert_eq!(piece_table.to_string(), baseline.to_string());
+                prop_assert_eq!(baseline.to_string(), piece_table.to_string());
+                prop_assert_eq!(line_buffer.to_string(), piece_table.to_string());
             }
         }
     }
