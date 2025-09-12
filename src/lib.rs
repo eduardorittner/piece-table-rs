@@ -4,6 +4,7 @@ use crate::interface::EditableText;
 
 pub mod interface;
 pub mod baseline;
+pub mod line_buffer;
 
 #[derive(Debug)]
 pub struct PieceTable {
