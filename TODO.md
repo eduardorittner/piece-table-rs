@@ -12,10 +12,10 @@ The main goal is to have a robust, correct, and fully functional implementation 
 
 ### Subtasks
 
-*   **[ ] Pass all proptests without failing:**
-    *   **Description:** The property-based tests are currently failing due to a bug in the `delete` function. This is the highest priority fix.
-    *   **Context:** The failing test is `property_tests::compare_implementations` in `src/lib.rs`. The panic occurs because of an out-of-bounds memory access when the `Display` trait tries to render the table's contents after a faulty deletion.
-    *   **Action:** Debug and fix the `delete` function in `src/lib.rs`.
+*   **[x] Pass all proptests without failing:**
+    *   **Description:** The property-based tests are now passing after fixing a bug in the `delete` function. All three implementations (`PieceTable`, `Baseline`, and `LineBuffer`) are now being compared.
+    *   **Context:** The failing test was `property_tests::compare_implementations` in `src/lib.rs`.
+    *   **Action:** Done.
 
 *   **[ ] Add more complete unit tests:**
     *   **Description:** While the property tests are great for finding edge cases, targeted unit tests for specific scenarios (e.g., deleting across multiple nodes, inserting at boundaries) are still valuable.
@@ -38,6 +38,10 @@ The goal of this task is to benchmark our `PieceTable` against other common text
 *   `workloads/`: Directory containing text files that define the sequence of operations for our benchmarks.
 
 ### Subtasks
+
+*   **[x] Implement a new data structure for comparison:**
+    *   **Description:** A `LineBuffer` implementation using `Vec<String>` has been added to serve as another point of comparison.
+    *   **Action:** Done.
 
 *   **[ ] Implement the interface with `ropey`:**
     *   **Description:** `ropey` is a popular, production-grade rope data structure in Rust. Implementing our `EditableText` interface for `ropey` will provide a strong, optimized baseline for performance comparison.
