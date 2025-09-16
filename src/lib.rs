@@ -84,6 +84,35 @@ impl PieceTable {
         }
     }
 
+    pub fn len(&self) -> usize {
+        self.to_string().len()
+    }
+
+    pub fn insert_char(&mut self, offset: usize, c: char) {
+        // The node we'll insert
+        let node_range = TextRange {
+            start: self.added.as_bytes().len(),
+            end: self.added.as_bytes().len() + c.len_utf8(),
+        };
+        self.added.push(c);
+        let node = Node {
+            kind: NodeKind::Added,
+            range: node_range,
+        };
+
+        if let Some((node_idx, node_pos)) = self.find_node(offset) {
+            let insert_idx = if self.split_node(node_idx, offset - node_pos) {
+                node_idx + 1
+            } else {
+                node_idx
+            };
+
+            self.nodes.insert(insert_idx, node);
+        } else {
+            self.nodes.push(node);
+        }
+    }
+
     pub fn insert(&mut self, data: &str, offset: usize) {
         // The node we'll insert
         let node_range = TextRange {
