@@ -2,8 +2,8 @@ use std::{collections::VecDeque, fmt::Display, ops::Add};
 
 use crate::interface::EditableText;
 
-pub mod interface;
 pub mod baseline;
+pub mod interface;
 pub mod line_buffer;
 
 #[derive(Debug, Clone)]
@@ -441,11 +441,11 @@ mod tests {
 
 #[cfg(test)]
 mod property_tests {
+    use crate::PieceTable;
+    use crate::TextRange;
     use crate::baseline::Baseline;
     use crate::interface::EditableText;
     use crate::line_buffer::LineBuffer;
-    use crate::PieceTable;
-    use crate::TextRange;
     use proptest::prelude::*;
 
     #[derive(Debug, Clone)]
@@ -454,11 +454,7 @@ mod property_tests {
         Delete(usize, usize),
     }
 
-    fn do_op<T: EditableText + std::fmt::Display>(
-        doc: &mut T,
-        op: &Op,
-        string_before_op: &String,
-    ) {
+    fn do_op<T: EditableText + std::fmt::Display>(doc: &mut T, op: &Op, string_before_op: &String) {
         match op {
             Op::Insert(text, offset) => {
                 let mut offset = *offset;
