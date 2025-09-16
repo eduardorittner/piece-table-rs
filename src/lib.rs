@@ -467,6 +467,23 @@ mod tests {
     }
 }
 
+impl<'a> From<String> for PieceTable<'a> {
+    fn from(s: String) -> Self {
+        PieceTable::new(&s)
+    }
+}
+
+impl<'a> From<&'a str> for PieceTable<'a> {
+    fn from(s: &'a str) -> Self {
+        PieceTable::new(s)
+    }
+}
+
+impl<'a> From<PieceTable<'a>> for String {
+    fn from(p: PieceTable<'a>) -> Self {
+        p.to_string()
+    }
+}
 #[cfg(test)]
 mod property_tests {
     use crate::PieceTable;

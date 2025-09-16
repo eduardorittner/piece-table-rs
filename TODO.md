@@ -51,7 +51,7 @@ The goal is to implement a more comprehensive API for text handling operations.
     *   **Description:** Add support for comparison operations using Rust's standard traits (PartialOrd, Ord, PartialEq, Eq)
     *   **Action:** Implement the traits in src/lib.rs for PieceTable
 
-*   **[ ] Implement conversion traits:**
+*   **[X] Implement conversion traits:**
     *   **Description:** Add conversion support between PieceTable and String using From/Into traits
     *   **Action:** Implement From<String> and From<PieceTable> for String in src/lib.rs
 
