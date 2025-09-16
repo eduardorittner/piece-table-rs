@@ -61,3 +61,8 @@ The goal is to implement a more comprehensive API for text handling operations.
     *   **Description:** Create an immutable view into a piece table that can be used like a string slice
     *   **Action:** Implement PTableSlice struct with appropriate trait implementations in src/lib.rs
     *   **Context:** PTableSlice has been implemented and works correctly, however it's still not working as intended where having a PTableSlice shouldn't prevent a PieceTable from being mutated.
+
+*   **[ ] Implement StableVec:**
+    *   **Description:** In order for PTableSlices to be sound, any pointers to PieceTable's internal data can never be invalidated. This is not true for String or Vec<u8>, so we need a new data structure that has an API similar to String but guarantees that old elements have stable addresses.
+    *   **Action:** Implement a StableText struct in stable_text.rs which has insertion, indexing and slicing operations.
+    *   **Context:** There are a number of pre-existing crates for this such as stable_vec, chunked_vec and so on. However they are general-purpose collections while we can make our own data structure which is optimized for our use-case (for example, since we never delete text there's no need to support deletion).
