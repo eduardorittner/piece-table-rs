@@ -11,7 +11,6 @@ pub struct PieceTable {
     original: String,
     added: String,
     nodes: Vec<Node>,
-    history: History,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -50,31 +49,6 @@ enum Edit {
     },
 }
 
-#[derive(Debug)]
-struct History {
-    undo: VecDeque<Edit>,
-    redo: VecDeque<Edit>,
-    depth: usize,
-    max_depth: usize,
-}
-
-impl Default for History {
-    fn default() -> Self {
-        History::new(1024)
-    }
-}
-
-impl History {
-    fn new(max_depth: usize) -> Self {
-        Self {
-            undo: VecDeque::with_capacity(max_depth),
-            redo: VecDeque::with_capacity(max_depth),
-            depth: 0,
-            max_depth,
-        }
-    }
-}
-
 impl Node {
     fn is_in_range(&self, byte_idx: usize, range: &TextRange) -> bool {
         byte_idx <= range.end && byte_idx + self.range.len() >= range.start
@@ -107,7 +81,6 @@ impl PieceTable {
             original: string,
             added: String::new(),
             nodes,
-            history: History::default(),
         }
     }
 
