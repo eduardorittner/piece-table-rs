@@ -60,3 +60,4 @@ The goal is to implement a more comprehensive API for text handling operations.
 *   **[ ] Implement PTableSlice:**
     *   **Description:** Create an immutable view into a piece table that can be used like a string slice
     *   **Action:** Implement PTableSlice struct with appropriate trait implementations in src/lib.rs
+    *   **Context:** PTableSlice has been implemented and works correctly, however it's still not working as intended where having a PTableSlice shouldn't prevent a PieceTable from being mutated.

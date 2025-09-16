@@ -5,11 +5,12 @@ use crate::interface::EditableText;
 pub mod baseline;
 pub mod interface;
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
     nodes: VecDeque<Node>,
+    _marker: std::marker::PhantomData<&'a str>,
 }
 
 #[derive(Debug, Clone)]
@@ -24,33 +25,184 @@ enum NodeKind {
     Added,
 }
 
-
-/// Represents an insertion or deletion which can be reverted
+/// An immutable view into a PieceTable
 ///
-/// An insert needs to remember where it was inserted (`offset`) and where the string contents are
-/// stored (`buffer_offset`). Note that since `original` is immutable, we know that any insertions
-/// have their content stored in the `added` buffer.
-#[derive(Debug, Clone)]
-enum Edit {
-    Insert {
-        offset: usize,
-        buffer_offset: usize,
-        len: usize,
-    },
-    Delete {
-        range: Range<usize>,
-        buffer_offset: usize,
+/// A slice lives as long as its corresponding PieceTable, and will not be affected by any changes
+/// made to the PieceTable after the slice was created.
+#[derive(Debug)]
+pub struct PTableSlice<'ptable> {
+    inner: PTSEnum,
+    _marker: std::marker::PhantomData<&'ptable PieceTable<'ptable>>,
+}
+
+#[derive(Debug)]
+enum PTSEnum {
+    /// Represents a slice that is contiguous in memory
+    Contiguous { string: *const str, len: usize },
+    /// Represents a slice that spans multiple nodes
+    NonContiguous {
+        nodes: Vec<Node>,     // Owned copy of nodes
+        original: *const str, // Pointer to original buffer
+        added: *const str,    // Pointer to added buffer
     },
 }
 
-impl Node {
-    fn is_in_range(&self, byte_idx: usize, range: &Range<usize>) -> bool {
-        byte_idx <= range.end && byte_idx + self.range.len() >= range.start
+impl<'ptable> PTableSlice<'ptable> {
+    /// Get the full text content as a string slice if contiguous
+    pub fn as_str(&self) -> Option<&'ptable str> {
+        match &self.inner {
+            PTSEnum::Contiguous { string, len } => {
+                // SAFETY: The pointer is valid for 'ptable lifetime and the string data is immutable
+                Some(unsafe { &(&**string)[0..*len] })
+            }
+            PTSEnum::NonContiguous { .. } => None,
+        }
+    }
+
+    /// Get the length of the text in bytes
+    pub fn len(&self) -> usize {
+        match &self.inner {
+            PTSEnum::Contiguous { len, .. } => *len,
+            PTSEnum::NonContiguous { nodes, .. } => nodes.iter().map(|n| n.range.len()).sum(),
+        }
+    }
+
+    /// Create a sub-slice of this slice
+    ///
+    /// The range used to create the slice is in reference to the `PTableSlice`, not the
+    /// `PieceTable`.
+    pub fn slice(&self, range: Range<usize>) -> Option<PTableSlice<'ptable>> {
+        match &self.inner {
+            PTSEnum::Contiguous { string, len } => {
+                let content = unsafe { &(&**string)[..*len] };
+                let sub_content = content.get(range.clone())?;
+                Some(PTableSlice {
+                    inner: PTSEnum::Contiguous {
+                        string: sub_content,
+                        len: range.len(),
+                    },
+                    _marker: std::marker::PhantomData,
+                })
+            }
+            PTSEnum::NonContiguous {
+                nodes,
+                original,
+                added,
+            } => {
+                let mut new_nodes = Vec::new();
+                let mut byte_idx = 0;
+                let mut remaining = range.end - range.start;
+                let start_offset = range.start;
+
+                for node in nodes {
+                    let node_len = node.range.len();
+
+                    if byte_idx + node_len > start_offset {
+                        let node_start = if byte_idx < start_offset {
+                            start_offset - byte_idx
+                        } else {
+                            0
+                        };
+
+                        let node_end = if remaining < node_len - node_start {
+                            node_start + remaining
+                        } else {
+                            node_len
+                        };
+
+                        if node_start < node_end {
+                            let mut new_node = node.clone();
+                            new_node.range.start += node_start;
+                            new_node.range.end = new_node.range.start + (node_end - node_start);
+                            new_nodes.push(new_node);
+                            remaining -= node_end - node_start;
+                        }
+                    }
+
+                    byte_idx += node_len;
+                    if remaining == 0 {
+                        break;
+                    }
+                }
+
+                if new_nodes.is_empty() {
+                    return None;
+                }
+
+                Some(PTableSlice {
+                    inner: PTSEnum::NonContiguous {
+                        nodes: new_nodes,
+                        original: *original,
+                        added: *added,
+                    },
+                    _marker: std::marker::PhantomData,
+                })
+            }
+        }
     }
 }
 
+impl<'ptable> From<&PTableSlice<'ptable>> for String {
+    fn from(value: &PTableSlice<'ptable>) -> Self {
+        match &value.inner {
+            PTSEnum::Contiguous { string, len } => unsafe { (&(&**string)[..*len]).to_string() },
+            PTSEnum::NonContiguous {
+                nodes,
+                original,
+                added,
+            } => {
+                let mut result = String::new();
+                for node in nodes {
+                    match node.kind {
+                        NodeKind::Original => unsafe {
+                            result.push_str(&(&**original)[node.range.clone()])
+                        },
+                        NodeKind::Added => unsafe {
+                            result.push_str(&(&**added)[node.range.clone()])
+                        },
+                    }
+                }
+                result
+            }
+        }
+    }
+}
+
+impl<'ptable> Display for PTableSlice<'ptable> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
+    }
+}
 
 impl<'a> PieceTable<'a> {
+    /// Create an immutable slice of the current state
+    pub fn create_slice(&self) -> PTableSlice<'_> {
+        // Check if the entire content is contiguous in one buffer
+        if self.nodes.len() == 1 {
+            let node = &self.nodes[0];
+            let content = match node.kind {
+                NodeKind::Original => &self.original[node.range.clone()],
+                NodeKind::Added => &self.added[node.range.clone()],
+            };
+            return PTableSlice {
+                inner: PTSEnum::Contiguous {
+                    string: content as *const _,
+                    len: node.range.len(),
+                },
+                _marker: std::marker::PhantomData,
+            };
+        }
+
+        PTableSlice {
+            inner: PTSEnum::NonContiguous {
+                nodes: self.nodes.iter().cloned().collect(),
+                original: self.original as *const _,
+                added: &*self.added as *const _,
+            },
+            _marker: std::marker::PhantomData,
+        }
+    }
+
     pub fn new(string: &'a str) -> Self {
         let mut nodes = VecDeque::new();
         nodes.push_back(Node {
@@ -62,6 +214,7 @@ impl<'a> PieceTable<'a> {
             original: string,
             added: String::new(),
             nodes,
+            _marker: std::marker::PhantomData,
         }
     }
 
@@ -93,7 +246,8 @@ impl<'a> PieceTable<'a> {
 
     pub fn insert(&mut self, data: &str, offset: usize) {
         // The node we'll insert
-        let node_range = self.added.as_bytes().len()..self.added.as_bytes().len() + data.as_bytes().len();
+        let node_range =
+            self.added.as_bytes().len()..self.added.as_bytes().len() + data.as_bytes().len();
         self.added.extend(data.chars());
         let node = Node {
             kind: NodeKind::Added,
@@ -167,11 +321,81 @@ impl<'a> PieceTable<'a> {
         self.insert(data, offset);
     }
 
-    pub fn undo(&mut self, count: usize) {}
+    pub fn undo(&mut self, _count: usize) {}
 
-    pub fn redo(&mut self, count: usize) {}
+    pub fn redo(&mut self, _count: usize) {}
 
     pub fn clear_history(&mut self) {}
+
+    /// Create a slice of the piece table for the given range
+    pub fn slice(&self, range: Range<usize>) -> PTableSlice<'_> {
+        let mut nodes = Vec::new();
+        let mut byte_idx = 0;
+        let mut found_start = false;
+
+        for node in &self.nodes {
+            let node_len = node.range.len();
+            let node_start = byte_idx;
+            let node_end = byte_idx + node_len;
+
+            // Check if node intersects with the range
+            if node_end > range.start && node_start < range.end {
+                if found_start && node_end < range.end {
+                    // Middle node - copy as-is
+                    nodes.push(node.clone());
+                }
+                if !found_start {
+                    // First node in range - may need to adjust start
+                    let start_offset = range.start.saturating_sub(node_start);
+                    let mut new_node = node.clone();
+                    new_node.range.start += start_offset;
+
+                    if node_end >= range.end {
+                        new_node.range.end -= node_end - range.end;
+                        nodes.push(new_node);
+                        found_start = true;
+                    } else {
+                        nodes.push(new_node);
+                        found_start = true;
+                    }
+                } else if node_end >= range.end {
+                    // Last node in range - may need to adjust end
+                    let end_offset = node_end - range.end;
+                    let mut new_node = node.clone();
+                    new_node.range.end -= end_offset;
+                    nodes.push(new_node);
+                    break;
+                }
+            }
+
+            byte_idx = node_end;
+        }
+
+        // Check if we can use a contiguous slice
+        if nodes.len() == 1 {
+            let node = &nodes[0];
+            let content = match node.kind {
+                NodeKind::Original => &self.original[node.range.clone()],
+                NodeKind::Added => &self.added[node.range.clone()],
+            };
+            return PTableSlice {
+                inner: PTSEnum::Contiguous {
+                    string: content,
+                    len: node.range.len(),
+                },
+                _marker: std::marker::PhantomData,
+            };
+        }
+
+        PTableSlice {
+            inner: PTSEnum::NonContiguous {
+                nodes,
+                original: self.original,
+                added: &*self.added,
+            },
+            _marker: std::marker::PhantomData,
+        }
+    }
 
     fn find_node(&self, offset: usize) -> Option<(usize, usize)> {
         let mut byte_idx = 0;
@@ -249,7 +473,6 @@ impl<'a> Display for PieceTable<'a> {
         Ok(())
     }
 }
-
 
 impl<'a> From<&'a str> for PieceTable<'a> {
     fn from(s: &'a str) -> Self {
@@ -537,6 +760,124 @@ mod tests {
 }
 
 #[cfg(test)]
+mod ptable_slice_tests {
+    use super::*;
+
+    #[test]
+    fn create_slice() {
+        let table = PieceTable::new("hello");
+        let slice = table.create_slice();
+        assert_eq!(slice.as_str(), Some("hello"));
+        assert_eq!(slice.len(), 5);
+    }
+
+    #[test]
+    fn slice_immutability() {
+        let mut table = PieceTable::new("hello");
+        {
+            let slice = table.create_slice();
+            assert_eq!(slice.as_str(), Some("hello"));
+        }
+        table.insert(" world", 5);
+        assert_eq!(table.to_string(), "hello world");
+    }
+
+    #[test]
+    fn slice_conversion() {
+        let table = PieceTable::new("test");
+        let slice = table.create_slice();
+        let s = slice.as_str().unwrap();
+        assert_eq!(s, "test");
+    }
+
+    #[test]
+    fn slice_range() {
+        let mut table = PieceTable::new("hello world");
+        table.insert(" beautiful", 5);
+        let slice = table.slice(6..16);
+        assert_eq!(slice.len(), 10);
+        assert_eq!(slice.as_str(), None); // Non-contiguous slice
+
+        // Verify the slice content by converting to string
+        let s = slice.to_string();
+        assert_eq!(s, "beautiful ");
+    }
+
+    #[test]
+    fn slice_contiguous_range() {
+        let table = PieceTable::new("hello world");
+        let slice = table.slice(0..5);
+        assert_eq!(slice.as_str(), Some("hello"));
+        //
+        println!("{slice:?}");
+
+        // Verify length matches range
+        assert_eq!(slice.len(), 5);
+    }
+
+    #[test]
+    fn multiple_slices() {
+        let table = PieceTable::new("hello");
+        let slice1 = table.create_slice();
+        let slice2 = table.create_slice();
+
+        assert_eq!(slice1.as_str(), Some("hello"));
+        assert_eq!(slice2.as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn nested_slices() {
+        let table = PieceTable::new("hello world");
+        let outer = table.create_slice();
+        let inner = table.slice(0..5);
+
+        assert_eq!(outer.as_str(), Some("hello world"));
+        assert_eq!(inner.as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn empty_slice() {
+        let table = PieceTable::new("");
+        let slice = table.create_slice();
+        assert_eq!(slice.as_str(), Some(""));
+        assert_eq!(slice.len(), 0);
+    }
+
+    #[test]
+    fn slice_of_slice() {
+        let table = PieceTable::new("hello world");
+        let slice1 = table.slice(0..5);
+        let slice2 = slice1.slice(1..4).unwrap();
+
+        assert_eq!(slice1.as_str(), Some("hello"));
+        assert_eq!(slice2.as_str(), Some("ell"));
+    }
+
+    #[test]
+    fn slice_of_slice_of_slice() {
+        let table = PieceTable::new("hello world");
+        let slice1 = table.slice(0..11);
+        let slice2 = slice1.slice(0..5).unwrap();
+        let slice3 = slice2.slice(0..4).unwrap();
+
+        assert_eq!(slice1.as_str(), Some("hello world"));
+        assert_eq!(slice2.as_str(), Some("hello"));
+        assert_eq!(slice3.as_str(), Some("hell"));
+    }
+
+    #[test]
+    fn slice_after_modifing() {
+        let table = PieceTable::new("hello world");
+        let slice = table.slice(0..11);
+
+        // TODO this doesn't work yet but should
+        // table.delete(0..11);
+
+        assert_eq!(slice.as_str(), Some("hello world"));
+    }
+}
+
+#[cfg(test)]
 mod property_tests {
     use crate::PieceTable;
     use crate::baseline::Baseline;
@@ -589,6 +930,19 @@ mod property_tests {
         }
     }
 
+    impl Arbitrary for Op {
+        type Parameters = ();
+        type Strategy = BoxedStrategy<Self>;
+
+        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
+            prop_oneof![
+                (any::<String>(), any::<usize>()).prop_map(|(s, i)| Op::Insert(s, i)),
+                (any::<usize>(), any::<usize>()).prop_map(|(i, j)| Op::Delete(i, j)),
+            ]
+            .boxed()
+        }
+    }
+
     proptest! {
         #[test]
         fn compare_implementations(initial_text: String, ops: Vec<Op>) {
@@ -602,19 +956,6 @@ mod property_tests {
 
                 prop_assert_eq!(baseline.to_string(), piece_table.to_string());
             }
-        }
-    }
-
-    impl Arbitrary for Op {
-        type Parameters = ();
-        type Strategy = BoxedStrategy<Self>;
-
-        fn arbitrary_with(_args: Self::Parameters) -> Self::Strategy {
-            prop_oneof![
-                (any::<String>(), any::<usize>()).prop_map(|(s, i)| Op::Insert(s, i)),
-                (any::<usize>(), any::<usize>()).prop_map(|(i, j)| Op::Delete(i, j)),
-            ]
-            .boxed()
         }
     }
 }
