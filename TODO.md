@@ -21,10 +21,6 @@ The main goal is to have a robust, correct, and fully functional implementation 
     *   **Description:** While the property tests are great for finding edge cases, targeted unit tests for specific scenarios (e.g., deleting across multiple nodes, inserting at boundaries) are still valuable.
     *   **Action:** Expand the `tests` module in `src/lib.rs` with more unit tests covering complex cases for both `insert` and `delete`.
 
-*   **[ ] Implement remaining `EditableText` methods:**
-    *   **Description:** The `EditableText` trait defines several methods (`replace`, `undo`, `redo`, `clear_history`) that are currently just placeholders in the `PieceTable` implementation.
-    *   **Action:** Implement the logic for these methods. I suggest we start with `replace`, as it can be built using the existing `insert` and `delete` operations.
-
 *   **[ ] Clean up warnings:**
     *   **Description:** The current codebase has several compiler warnings (e.g., unused variables and imports) that should be resolved to improve code quality and prevent bugs.
     *   **Action:** Run `cargo check` and address each of the reported warnings.
@@ -34,35 +30,31 @@ The main goal is to have a robust, correct, and fully functional implementation 
 The goal of this task is to benchmark our `PieceTable` against other common text-editing data structures to understand its performance characteristics.
 
 **Relevant Files:**
-*   `benches/editing_benchmark.rs`: The benchmark suite powered by `criterion`.
-*   `workloads/`: Directory containing text files that define the sequence of operations for our benchmarks.
+*   `benches/*`: Benchmark files.
 
 ### Subtasks
-
-*   **[x] Implement a new data structure for comparison:**
-    *   **Description:** A `LineBuffer` implementation using `Vec<String>` has been added to serve as another point of comparison.
-    *   **Action:** Done.
-
-*   **[ ] Implement the interface with `ropey`:**
-    *   **Description:** `ropey` is a popular, production-grade rope data structure in Rust. Implementing our `EditableText` interface for `ropey` will provide a strong, optimized baseline for performance comparison.
-    *   **Action:** Add the `ropey` crate as a dependency and create a new module (e.g., `src/ropey_impl.rs`) that wraps it.
-
-*   **[ ] Implement the interface with the already existent `piece-table-rs`:**
-    *   **Description:** To see how our implementation stacks up against prior art, we should also wrap the existing `piece-table` crate from crates.io.
-    *   **Action:** Add the `piece-table` crate as a dependency and create a wrapper module for it.
-
-*   **[ ] (Optional) Implement the interface with a gap buffer:**
-    *   **Description:** A gap buffer is another classic text-editing data structure. Implementing it would provide another interesting point of comparison.
-    *   **Action:** Implement a gap buffer from scratch or find a suitable crate and wrap it in a new module.
 
 *   **[ ] Research other possible data structures:**
     *   **Description:** Explore other data structures that could be used for text editing and could fit our `EditableText` interface, such as a piece tree (a variation of a piece table using a self-balancing binary search tree).
     *   **Action:** Research and document potential candidates.
 
-*   **[ ] Neovim plugin that exports edits in the workload format:**
-    *   **Description:** To generate realistic workloads, we can create a Neovim plugin to record editing sessions and export them to our simple `INSERT`/`DELETE` text format.
-    *   **Context:** This would likely involve writing a Lua script that hooks into Neovim's buffer change events (`nvim_buf_attach`) and writing the corresponding operations to a file.
-
 *   **[ ] Analyze and compare benchmark results:**
     *   **Description:** After implementing the other data structures, we will need to run the benchmarks with a variety of workloads and analyze the results to draw meaningful conclusions.
-    *   **Action:** Create different workload files (e.g., mostly deletions, mixed operations, large files) and run the full benchmark suite. The results from `criterion` (in `target/criterion`) can then be compiled into a summary, possibly with graphs, in our project's `README.md`.
+
+## [ ] 3. Expand Text Handling API
+
+The goal is to implement a more comprehensive API for text handling operations.
+
+### Subtasks
+
+*   **[ ] Implement comparison operators:**
+    *   **Description:** Add support for comparison operations using Rust's standard traits (PartialOrd, Ord, PartialEq, Eq)
+    *   **Action:** Implement the traits in src/lib.rs for PieceTable
+
+*   **[ ] Implement conversion traits:**
+    *   **Description:** Add conversion support between PieceTable and String using From/Into traits
+    *   **Action:** Implement From<String> and From<PieceTable> for String in src/lib.rs
+
+*   **[ ] Implement PTableSlice:**
+    *   **Description:** Create an immutable view into a piece table that can be used like a string slice
+    *   **Action:** Implement PTableSlice struct with appropriate trait implementations in src/lib.rs
