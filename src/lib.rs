@@ -283,6 +283,44 @@ impl TextRange {
     }
 }
 
+impl<'a> From<&'a str> for PieceTable<'a> {
+    fn from(s: &'a str) -> Self {
+        PieceTable::new(s)
+    }
+}
+
+impl<'a> From<PieceTable<'a>> for String {
+    fn from(p: PieceTable<'a>) -> Self {
+        p.to_string()
+    }
+}
+
+impl<'a> PartialEq for PieceTable<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl<'a> Eq for PieceTable<'a> {}
+
+impl<'a> PartialEq<String> for PieceTable<'a> {
+    fn eq(&self, other: &String) -> bool {
+        &self.to_string() == other
+    }
+}
+
+impl<'a> PartialEq<&str> for PieceTable<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        &self.to_string() == other
+    }
+}
+
+impl<'a> PartialOrd for PieceTable<'a> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.to_string().cmp(&other.to_string()))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::*;
@@ -506,37 +544,27 @@ mod tests {
         let pt = PieceTable::new("hello");
         assert_ne!(pt, "world");
     }
-}
 
-impl<'a> From<&'a str> for PieceTable<'a> {
-    fn from(s: &'a str) -> Self {
-        PieceTable::new(s)
+    #[test]
+    fn partial_ord_less() {
+        let pt1 = PieceTable::new("apple");
+        let pt2 = PieceTable::new("banana");
+        assert!(pt1 < pt2);
     }
-}
 
-impl<'a> From<PieceTable<'a>> for String {
-    fn from(p: PieceTable<'a>) -> Self {
-        p.to_string()
+    #[test]
+    fn partial_ord_greater() {
+        let pt1 = PieceTable::new("banana");
+        let pt2 = PieceTable::new("apple");
+        assert!(pt1 > pt2);
     }
-}
 
-impl<'a> PartialEq for PieceTable<'a> {
-    fn eq(&self, other: &Self) -> bool {
-        self.to_string() == other.to_string()
-    }
-}
-
-impl<'a> Eq for PieceTable<'a> {}
-
-impl<'a> PartialEq<String> for PieceTable<'a> {
-    fn eq(&self, other: &String) -> bool {
-        &self.to_string() == other
-    }
-}
-
-impl<'a> PartialEq<&str> for PieceTable<'a> {
-    fn eq(&self, other: &&str) -> bool {
-        &self.to_string() == other
+    #[test]
+    fn partial_ord_equal() {
+        let pt1 = PieceTable::new("apple");
+        let pt2 = PieceTable::new("apple");
+        assert!(pt1 <= pt2);
+        assert!(pt1 >= pt2);
     }
 }
 
