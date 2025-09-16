@@ -6,9 +6,9 @@ pub struct Baseline {
     text: String,
 }
 
-impl EditableText for Baseline {
-    fn new(string: String) -> Self {
-        Baseline { text: string }
+impl EditableText<'_> for Baseline {
+    fn new(string: &str) -> Self {
+        Baseline { text: string.to_string() }
     }
 
     fn insert(&mut self, data: &str, offset: usize) {

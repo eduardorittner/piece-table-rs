@@ -1,14 +1,13 @@
-use std::{collections::VecDeque, fmt::Display, ops::Add};
+use std::{fmt::Display, ops::Add};
 
 use crate::interface::EditableText;
 
 pub mod baseline;
 pub mod interface;
-pub mod line_buffer;
 
 #[derive(Debug, Clone)]
-pub struct PieceTable {
-    original: String,
+pub struct PieceTable<'a> {
+    original: &'a str,
     added: String,
     nodes: Vec<Node>,
 }
@@ -66,8 +65,8 @@ impl Add<TextRange> for TextRange {
     }
 }
 
-impl PieceTable {
-    pub fn new(string: String) -> Self {
+impl<'a> PieceTable<'a> {
+    pub fn new(string: &'a str) -> Self {
         let mut nodes = Vec::new();
         nodes.push(Node {
             kind: NodeKind::Original,
@@ -243,8 +242,8 @@ impl PieceTable {
     }
 }
 
-impl EditableText for PieceTable {
-    fn new(string: String) -> Self {
+impl<'a> EditableText<'a> for PieceTable<'a> {
+    fn new(string: &'a str) -> Self {
         PieceTable::new(string)
     }
 
@@ -257,7 +256,7 @@ impl EditableText for PieceTable {
     }
 }
 
-impl Display for PieceTable {
+impl<'a> Display for PieceTable<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for node in &self.nodes {
             write!(
@@ -290,7 +289,7 @@ mod tests {
     #[test]
     fn display() {
         let string = "hello!";
-        let piece_table = PieceTable::new(string.to_string());
+        let piece_table = PieceTable::new(string);
 
         assert_eq!(string, piece_table.to_string());
     }
@@ -298,7 +297,7 @@ mod tests {
     #[test]
     fn insert_once() {
         let original = "hello, ";
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         let added = "world!";
         piece_table.insert(added, original.len());
@@ -312,7 +311,7 @@ mod tests {
         let added = "world";
         let second = "!";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
         piece_table.insert(added, original.len());
         piece_table.insert(second, original.len() + added.len());
 
@@ -327,7 +326,7 @@ mod tests {
         let original = "hello!";
         let added = ", world";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.insert(added, 5);
 
@@ -340,7 +339,7 @@ mod tests {
         let original = "hello";
         let added = ", world!";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.insert(added, 5);
 
@@ -353,7 +352,7 @@ mod tests {
         let original = "bc";
         let added = "a";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.insert(added, 0);
 
@@ -365,7 +364,7 @@ mod tests {
     fn delete_original_whole() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 0, end: 2 });
 
@@ -376,7 +375,7 @@ mod tests {
     fn delete_original_half() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 0, end: 1 });
 
@@ -387,7 +386,7 @@ mod tests {
     fn delete_original_second_half() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 1, end: 2 });
 
@@ -398,7 +397,7 @@ mod tests {
     fn delete_original_middle() {
         let original = "abc";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 1, end: 2 });
 
@@ -409,7 +408,7 @@ mod tests {
     fn delete_original_two_times() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 0, end: 1 });
         piece_table.delete(TextRange { start: 0, end: 1 });
@@ -421,7 +420,7 @@ mod tests {
     fn add_then_delete() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.delete(TextRange { start: 0, end: 1 });
         piece_table.delete(TextRange { start: 0, end: 1 });
@@ -434,7 +433,7 @@ mod tests {
     fn add_at_start() {
         let original = "world!";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.insert("hello", 0);
         piece_table.insert(", ", 5);
@@ -447,7 +446,7 @@ mod tests {
     fn add_delete_add() {
         let original = "ab";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.insert("c", 2);
         piece_table.delete(TextRange { start: 0, end: 3 });
@@ -460,7 +459,7 @@ mod tests {
     fn replace() {
         let original = "hello, hello!";
 
-        let mut piece_table = PieceTable::new(original.to_string());
+        let mut piece_table = PieceTable::new(original);
 
         piece_table.replace("world", 7);
 
@@ -474,7 +473,6 @@ mod property_tests {
     use crate::TextRange;
     use crate::baseline::Baseline;
     use crate::interface::EditableText;
-    use crate::line_buffer::LineBuffer;
     use proptest::prelude::*;
 
     #[derive(Debug, Clone)]
@@ -483,7 +481,11 @@ mod property_tests {
         Delete(usize, usize),
     }
 
-    fn do_op<T: EditableText + std::fmt::Display>(doc: &mut T, op: &Op, string_before_op: &String) {
+    fn do_op<'a, T: EditableText<'a> + std::fmt::Display>(
+        doc: &mut T,
+        op: &Op,
+        string_before_op: &String,
+    ) {
         match op {
             Op::Insert(text, offset) => {
                 let mut offset = *offset;
@@ -522,18 +524,15 @@ mod property_tests {
     proptest! {
         #[test]
         fn compare_implementations(initial_text: String, ops: Vec<Op>) {
-            let mut piece_table = PieceTable::new(initial_text.clone());
-            let mut baseline = Baseline::new(initial_text.clone());
-            let mut line_buffer = LineBuffer::new(initial_text.clone());
+            let mut piece_table = PieceTable::new(&initial_text);
+            let mut baseline = Baseline::new(&initial_text);
 
             for op in ops {
                 let s = piece_table.to_string();
                 do_op(&mut piece_table, &op, &s);
                 do_op(&mut baseline, &op, &s);
-                do_op(&mut line_buffer, &op, &s);
 
                 prop_assert_eq!(baseline.to_string(), piece_table.to_string());
-                prop_assert_eq!(line_buffer.to_string(), piece_table.to_string());
             }
         }
     }

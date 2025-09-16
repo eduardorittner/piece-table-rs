@@ -24,8 +24,8 @@ impl LineBuffer {
     }
 }
 
-impl EditableText for LineBuffer {
-    fn new(string: String) -> Self {
+impl EditableText<'_> for LineBuffer {
+    fn new(string: &str) -> Self {
         let lines = string.lines().map(|s| s.to_string()).collect();
         LineBuffer { lines }
     }

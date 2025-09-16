@@ -73,25 +73,25 @@ fn ptable_from_str(c: &mut Criterion) {
 
     group.bench_function("small", |bench| {
         bench.iter(|| {
-            PieceTable::new(black_box(TEXT_SMALL.to_string()));
+            PieceTable::new(black_box(TEXT_SMALL));
         })
     });
 
     group.bench_function("medium", |bench| {
         bench.iter(|| {
-            PieceTable::new(black_box(TEXT_MEDIUM.to_string()));
+            PieceTable::new(black_box(TEXT_MEDIUM));
         })
     });
 
     group.bench_function("large", |bench| {
         bench.iter(|| {
-            PieceTable::new(black_box(TEXT_LARGE.to_string()));
+            PieceTable::new(black_box(TEXT_LARGE));
         })
     });
 
     group.bench_function("linefeeds", |bench| {
         bench.iter(|| {
-            PieceTable::new(black_box(TEXT_LF.to_string()));
+            PieceTable::new(black_box(TEXT_LF));
         })
     });
 }
@@ -106,7 +106,7 @@ fn rope_clone(c: &mut Criterion) {
 }
 
 fn ptable_clone(c: &mut Criterion) {
-    let ptable = PieceTable::new(TEXT_LARGE.to_string());
+    let ptable = PieceTable::new(TEXT_LARGE);
     c.bench_function("ptable_clone", |bench| {
         bench.iter(|| {
             let _ = black_box(&ptable).clone();
@@ -122,7 +122,6 @@ criterion_group!(
     string_from_str,
     ptable_from_str,
     rope_clone,
-    string_clone,
     ptable_clone
 );
 criterion_main!(benches);
