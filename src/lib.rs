@@ -6,7 +6,7 @@ pub mod interface;
 pub mod baseline;
 pub mod line_buffer;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PieceTable {
     original: String,
     added: String,
