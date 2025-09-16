@@ -47,13 +47,15 @@ The goal is to implement a more comprehensive API for text handling operations.
 
 ### Subtasks
 
-*   **[ ] Implement comparison operators:**
-    *   **Description:** Add support for comparison operations using Rust's standard traits (PartialOrd, Ord, PartialEq, Eq)
-    *   **Action:** Implement the traits in src/lib.rs for PieceTable
+*   **[x] Implement comparison operators:**
+    *   **Description:** Added support for comparison operations using Rust's standard traits (PartialOrd, PartialEq, Eq)
+    *   **Action:** Implemented the traits in src/lib.rs for PieceTable
+    *   **Context:** Includes tests for all comparison cases (==, !=, <, >, <=, >=)
 
-*   **[X] Implement conversion traits:**
-    *   **Description:** Add conversion support between PieceTable and String using From/Into traits
-    *   **Action:** Implement From<String> and From<PieceTable> for String in src/lib.rs
+*   **[x] Implement conversion traits:**
+    *   **Description:** Added conversion support between PieceTable and String/&str using From/Into traits
+    *   **Action:** Implemented From<String>, From<&str>, From<PieceTable> for String, and From<PieceTable> for &str in src/lib.rs
+    *   **Context:** Includes comprehensive tests for all conversion cases
 
 *   **[ ] Implement PTableSlice:**
     *   **Description:** Create an immutable view into a piece table that can be used like a string slice
