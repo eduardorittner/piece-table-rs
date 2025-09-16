@@ -10,7 +10,6 @@ pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
     nodes: VecDeque<Node>,
-    _marker: std::marker::PhantomData<&'a str>,
 }
 
 #[derive(Debug, Clone)]
@@ -32,7 +31,7 @@ enum NodeKind {
 #[derive(Debug)]
 pub struct PTableSlice<'ptable> {
     inner: PTSEnum,
-    _marker: std::marker::PhantomData<&'ptable PieceTable<'ptable>>,
+    _marker: std::marker::PhantomData<&'ptable ()>,
 }
 
 #[derive(Debug)]
@@ -174,7 +173,7 @@ impl<'ptable> Display for PTableSlice<'ptable> {
     }
 }
 
-impl<'a> PieceTable<'a> {
+impl<'ptable> PieceTable<'ptable> {
     /// Create an immutable slice of the current state
     pub fn create_slice(&self) -> PTableSlice<'_> {
         // Check if the entire content is contiguous in one buffer
@@ -203,7 +202,7 @@ impl<'a> PieceTable<'a> {
         }
     }
 
-    pub fn new(string: &'a str) -> Self {
+    pub fn new(string: &'ptable str) -> Self {
         let mut nodes = VecDeque::new();
         nodes.push_back(Node {
             kind: NodeKind::Original,
@@ -214,7 +213,6 @@ impl<'a> PieceTable<'a> {
             original: string,
             added: String::new(),
             nodes,
-            _marker: std::marker::PhantomData,
         }
     }
 
@@ -328,7 +326,7 @@ impl<'a> PieceTable<'a> {
     pub fn clear_history(&mut self) {}
 
     /// Create a slice of the piece table for the given range
-    pub fn slice(&self, range: Range<usize>) -> PTableSlice<'_> {
+    pub fn slice(&self, range: Range<usize>) -> PTableSlice<'ptable> {
         let mut nodes = Vec::new();
         let mut byte_idx = 0;
         let mut found_start = false;
@@ -867,11 +865,10 @@ mod ptable_slice_tests {
 
     #[test]
     fn slice_after_modifing() {
-        let table = PieceTable::new("hello world");
+        let mut table = PieceTable::new("hello world");
         let slice = table.slice(0..11);
 
-        // TODO this doesn't work yet but should
-        // table.delete(0..11);
+        table.delete(0..11);
 
         assert_eq!(slice.as_str(), Some("hello world"));
     }
