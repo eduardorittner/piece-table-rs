@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Display, ops::Add};
+use std::{collections::VecDeque, fmt::Display, ops::Range};
 
 use crate::interface::EditableText;
 
@@ -12,10 +12,10 @@ pub struct PieceTable<'a> {
     nodes: VecDeque<Node>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 struct Node {
     kind: NodeKind,
-    range: TextRange,
+    range: Range<usize>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -24,18 +24,13 @@ enum NodeKind {
     Added,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd)]
-pub struct TextRange {
-    pub start: usize,
-    pub end: usize,
-}
 
 /// Represents an insertion or deletion which can be reverted
 ///
 /// An insert needs to remember where it was inserted (`offset`) and where the string contents are
 /// stored (`buffer_offset`). Note that since `original` is immutable, we know that any insertions
 /// have their content stored in the `added` buffer.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 enum Edit {
     Insert {
         offset: usize,
@@ -43,37 +38,24 @@ enum Edit {
         len: usize,
     },
     Delete {
-        range: TextRange,
+        range: Range<usize>,
         buffer_offset: usize,
     },
 }
 
 impl Node {
-    fn is_in_range(&self, byte_idx: usize, range: &TextRange) -> bool {
+    fn is_in_range(&self, byte_idx: usize, range: &Range<usize>) -> bool {
         byte_idx <= range.end && byte_idx + self.range.len() >= range.start
     }
 }
 
-impl Add<TextRange> for TextRange {
-    type Output = TextRange;
-
-    fn add(self, rhs: TextRange) -> Self::Output {
-        TextRange {
-            start: self.start + rhs.start,
-            end: self.end + rhs.end,
-        }
-    }
-}
 
 impl<'a> PieceTable<'a> {
     pub fn new(string: &'a str) -> Self {
         let mut nodes = VecDeque::new();
         nodes.push_back(Node {
             kind: NodeKind::Original,
-            range: TextRange {
-                start: 0,
-                end: string.as_bytes().len(),
-            },
+            range: 0..string.as_bytes().len(),
         });
 
         PieceTable {
@@ -89,10 +71,7 @@ impl<'a> PieceTable<'a> {
 
     pub fn insert_char(&mut self, offset: usize, c: char) {
         // The node we'll insert
-        let node_range = TextRange {
-            start: self.added.as_bytes().len(),
-            end: self.added.as_bytes().len() + c.len_utf8(),
-        };
+        let node_range = self.added.as_bytes().len()..self.added.as_bytes().len() + c.len_utf8();
         self.added.push(c);
         let node = Node {
             kind: NodeKind::Added,
@@ -114,10 +93,7 @@ impl<'a> PieceTable<'a> {
 
     pub fn insert(&mut self, data: &str, offset: usize) {
         // The node we'll insert
-        let node_range = TextRange {
-            start: self.added.as_bytes().len(),
-            end: self.added.as_bytes().len() + data.as_bytes().len(),
-        };
+        let node_range = self.added.as_bytes().len()..self.added.as_bytes().len() + data.as_bytes().len();
         self.added.extend(data.chars());
         let node = Node {
             kind: NodeKind::Added,
@@ -137,9 +113,9 @@ impl<'a> PieceTable<'a> {
         }
     }
 
-    pub fn delete(&mut self, range: TextRange) {
+    pub fn delete(&mut self, range: Range<usize>) {
         if let Some((start, byte_idx)) = self.find_node(range.start) {
-            self.delete_complete_nodes(start, byte_idx, range);
+            self.delete_complete_nodes(start, byte_idx, &range);
 
             if let Some(node) = self.nodes.get(start) {
                 if byte_idx <= range.start && range.end <= byte_idx + node.range.len() {
@@ -155,13 +131,13 @@ impl<'a> PieceTable<'a> {
     ///
     /// Any nodes which are only partially in the range will not be deleted and must be dealt with
     /// by the caller.
-    fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: TextRange) {
+    fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: &Range<usize>) {
         let mut start = None;
         let mut end = None;
         let mut byte_idx = byte_idx;
 
         for i in idx..self.nodes.len() {
-            let node = self.nodes[i];
+            let node = &self.nodes[i];
             let node_len = node.range.len();
 
             if byte_idx >= range.start && byte_idx + node_len <= range.end {
@@ -187,10 +163,7 @@ impl<'a> PieceTable<'a> {
     /// In order to preserve undo/redo history this is implemented as a delete + insertion, instead
     /// of a direct replacement.
     pub fn replace(&mut self, data: &str, offset: usize) {
-        self.delete(TextRange {
-            start: offset,
-            end: offset + data.len(),
-        });
+        self.delete(offset..offset + data.len());
         self.insert(data, offset);
     }
 
@@ -251,7 +224,7 @@ impl<'a> EditableText<'a> for PieceTable<'a> {
         self.insert(data, offset)
     }
 
-    fn delete(&mut self, range: TextRange) {
+    fn delete(&mut self, range: Range<usize>) {
         self.delete(range)
     }
 }
@@ -277,11 +250,6 @@ impl<'a> Display for PieceTable<'a> {
     }
 }
 
-impl TextRange {
-    fn len(&self) -> usize {
-        self.end - self.start
-    }
-}
 
 impl<'a> From<&'a str> for PieceTable<'a> {
     fn from(s: &'a str) -> Self {
@@ -404,7 +372,7 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 0, end: 2 });
+        piece_table.delete(0..2);
 
         assert_eq!("", piece_table.to_string());
     }
@@ -415,7 +383,7 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.delete(0..1);
 
         assert_eq!("b", piece_table.to_string());
     }
@@ -426,7 +394,7 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 1, end: 2 });
+        piece_table.delete(1..2);
 
         assert_eq!("a", piece_table.to_string());
     }
@@ -437,7 +405,7 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 1, end: 2 });
+        piece_table.delete(1..2);
 
         assert_eq!("ac", piece_table.to_string());
     }
@@ -448,8 +416,8 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 0, end: 1 });
-        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.delete(0..1);
+        piece_table.delete(0..1);
 
         assert_eq!("", piece_table.to_string());
     }
@@ -460,8 +428,8 @@ mod tests {
 
         let mut piece_table = PieceTable::new(original);
 
-        piece_table.delete(TextRange { start: 0, end: 1 });
-        piece_table.delete(TextRange { start: 0, end: 1 });
+        piece_table.delete(0..1);
+        piece_table.delete(0..1);
         piece_table.insert("ab", 0);
 
         assert_eq!("ab", piece_table.to_string());
@@ -487,7 +455,7 @@ mod tests {
         let mut piece_table = PieceTable::new(original);
 
         piece_table.insert("c", 2);
-        piece_table.delete(TextRange { start: 0, end: 3 });
+        piece_table.delete(0..3);
         piece_table.insert("ab", 0);
 
         assert_eq!("ab", piece_table.to_string());
@@ -571,7 +539,6 @@ mod tests {
 #[cfg(test)]
 mod property_tests {
     use crate::PieceTable;
-    use crate::TextRange;
     use crate::baseline::Baseline;
     use crate::interface::EditableText;
     use proptest::prelude::*;
@@ -617,7 +584,7 @@ mod property_tests {
                 while !string_before_op.is_char_boundary(end) {
                     end = end.saturating_sub(1);
                 }
-                doc.delete(TextRange { start, end });
+                doc.delete(start..end);
             }
         }
     }

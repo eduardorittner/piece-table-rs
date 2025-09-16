@@ -1,5 +1,5 @@
 use crate::interface::EditableText;
-use crate::TextRange;
+use std::ops::Range;
 use std::fmt;
 
 pub struct Baseline {
@@ -15,7 +15,7 @@ impl EditableText<'_> for Baseline {
         self.text.insert_str(offset, data);
     }
 
-    fn delete(&mut self, range: TextRange) {
+    fn delete(&mut self, range: Range<usize>) {
         self.text.replace_range(range.start..range.end, "");
     }
 }
