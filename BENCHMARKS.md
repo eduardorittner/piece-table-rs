@@ -1,0 +1,101 @@
+# Benchmark Results
+
+## Insert Character
+
+Note that the only characters that have been tested so far are one-byte ascii characters, it may be that the performance profile of inserting multi-byte utf8 characters is different, but it shouldn't change that much. This hasn't been done yet because insertions should always happen at char boundaries, and guaranteeing that at runtime with random data involves at least *some* logic, which could influence the benchmarks. It probably can be done, it just isn't a priority.
+
+### Random Insert
+- Rope: ~250ns
+- String: ~21μs (84x slower than Rope)
+- PieceTable: ~165μs (660x slower than Rope)
+
+### Start Insert
+- Rope: ~130ns
+- String: ~50μs (385x slower)
+- PieceTable: ~26ns (5x faster than Rope)
+
+### Middle Insert
+- Rope: ~160ns
+- String: ~20μs (125x slower)
+- PieceTable: ~140μs (875x slower)
+
+### End Insert
+- Rope: ~170ns
+- String: ~1.2ns (fastest)
+- PieceTable: ~95μs (560x slower than Rope)
+
+## Insert Small Text ("a")
+
+### Random Insert
+- Rope: ~240ns
+- String: ~22μs (92x slower)
+- PieceTable: ~160μs (670x slower)
+
+### Start Insert
+- Rope: ~130ns
+- String: ~49μs (380x slower)
+- PieceTable: ~29ns (4.5x faster than Rope)
+
+### Middle Insert
+- Rope: ~160ns
+- String: ~18μs (115x slower)
+- PieceTable: ~140μs (875x slower)
+
+### End Insert
+- Rope: ~170ns
+- String: ~1.3ns (fastest)
+- PieceTable: ~95μs (560x slower)
+
+## Insert Medium Text ("This is some text.")
+
+### Random Insert
+- Rope: ~310ns
+- String: ~22μs (71x slower)
+- PieceTable: ~150μs (480x slower)
+
+### Start Insert
+- Rope: ~180ns
+- String: ~50μs (280x slower)
+- PieceTable: ~87ns (2x faster than Rope)
+
+### Middle Insert
+- Rope: ~230ns
+- String: ~20μs (87x slower)
+- PieceTable: ~140μs (610x slower)
+
+### End Insert
+- Rope: ~200ns
+- String: ~10ns (fastest)
+- PieceTable: ~90μs (450x slower)
+
+## Insert Large Text (file contents)
+
+### Random Insert
+- Rope: ~2.5μs
+- String: ~28μs (11x slower)
+- PieceTable: ~190μs (76x slower)
+
+### Start Insert
+- Rope: ~1.6μs
+- String: ~58μs (36x slower)
+- PieceTable: ~2.2μs (1.4x slower)
+
+### Middle Insert
+- Rope: ~1.9μs
+- String: ~25μs (13x slower)
+- PieceTable: ~150μs (80x slower)
+
+### End Insert
+- Rope: ~2.2μs
+- String: ~0.7μs (fastest)
+- PieceTable: ~190μs (86x slower)
+
+## Conclusion
+
+1. Rope is consistently fast for most insertion operations (except end inserts). This makes sense given its balanced tree structure.
+2. String is fastest for end insertions but very slow for other operations. This makes sense since in strings, inserting at the end requires at most a reallocation, and at best a byte write and updating the length which is basically instant.
+3. PieceTable shows the most varied performance:
+   - Fastest for start inserts (beating both Rope and String)
+   - Slowest for middle/random inserts
+   - Competitive for end inserts
+The excellent start insert performance comes from direct access to the first node and VecDeque's circular nature, while middle inserts suffer from node traversal and splitting overhead.
