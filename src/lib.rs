@@ -465,11 +465,46 @@ mod tests {
 
         assert_eq!("hello, world!", piece_table.to_string());
     }
-}
 
-impl<'a> From<String> for PieceTable<'a> {
-    fn from(s: String) -> Self {
-        PieceTable::new(&s)
+    #[test]
+    fn eq_same_piecetables() {
+        let text = "test";
+        let pt1 = PieceTable::new(text);
+        let pt2 = PieceTable::new(text);
+        assert_eq!(pt1, pt2);
+    }
+
+    #[test]
+    fn eq_different_piecetables() {
+        let pt1 = PieceTable::new("hello");
+        let pt2 = PieceTable::new("world");
+        assert_ne!(pt1, pt2);
+    }
+
+    #[test]
+    fn eq_piecetable_and_string() {
+        let text = "test";
+        let pt = PieceTable::new(text);
+        assert_eq!(pt, text.to_string());
+    }
+
+    #[test]
+    fn ne_piecetable_and_string() {
+        let pt = PieceTable::new("hello");
+        assert_ne!(pt, "world".to_string());
+    }
+
+    #[test]
+    fn eq_piecetable_and_str() {
+        let text = "test";
+        let pt = PieceTable::new(text);
+        assert_eq!(pt, text);
+    }
+
+    #[test]
+    fn ne_piecetable_and_str() {
+        let pt = PieceTable::new("hello");
+        assert_ne!(pt, "world");
     }
 }
 
@@ -484,6 +519,27 @@ impl<'a> From<PieceTable<'a>> for String {
         p.to_string()
     }
 }
+
+impl<'a> PartialEq for PieceTable<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.to_string() == other.to_string()
+    }
+}
+
+impl<'a> Eq for PieceTable<'a> {}
+
+impl<'a> PartialEq<String> for PieceTable<'a> {
+    fn eq(&self, other: &String) -> bool {
+        &self.to_string() == other
+    }
+}
+
+impl<'a> PartialEq<&str> for PieceTable<'a> {
+    fn eq(&self, other: &&str) -> bool {
+        &self.to_string() == other
+    }
+}
+
 #[cfg(test)]
 mod property_tests {
     use crate::PieceTable;
