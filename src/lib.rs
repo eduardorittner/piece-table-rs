@@ -1,4 +1,4 @@
-use std::{fmt::Display, ops::Add};
+use std::{collections::VecDeque, fmt::Display, ops::Add};
 
 use crate::interface::EditableText;
 
@@ -9,7 +9,7 @@ pub mod interface;
 pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
-    nodes: Vec<Node>,
+    nodes: VecDeque<Node>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -67,8 +67,8 @@ impl Add<TextRange> for TextRange {
 
 impl<'a> PieceTable<'a> {
     pub fn new(string: &'a str) -> Self {
-        let mut nodes = Vec::new();
-        nodes.push(Node {
+        let mut nodes = VecDeque::new();
+        nodes.push_back(Node {
             kind: NodeKind::Original,
             range: TextRange {
                 start: 0,
@@ -108,7 +108,7 @@ impl<'a> PieceTable<'a> {
 
             self.nodes.insert(insert_idx, node);
         } else {
-            self.nodes.push(node);
+            self.nodes.push_back(node);
         }
     }
 
@@ -133,7 +133,7 @@ impl<'a> PieceTable<'a> {
 
             self.nodes.insert(insert_idx, node);
         } else {
-            self.nodes.push(node);
+            self.nodes.push_back(node);
         }
     }
 
