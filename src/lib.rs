@@ -59,168 +59,7 @@ pub struct PTableSlice<'ptable> {
     _marker: std::marker::PhantomData<&'ptable ()>,
 }
 
-impl<'ptable> PTableSlice<'ptable> {
-    /// Returns the total length of the text in the slice, in bytes.
-    ///
-    /// This method iterates through all the nodes in the slice and sums up their individual lengths.
-    /// The length is calculated based on the byte ranges of the underlying text pieces, not on the
-    /// number of characters.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use piece_table::PieceTable;
-    /// let pt = PieceTable::new("hello world");
-    /// let slice = pt.slice(0..5);
-    /// assert_eq!(slice.len(), 5);
-    /// ```
-    pub fn len(&self) -> usize {
-        self.nodes.iter().map(|n| n.range.len()).sum()
-    }
-
-    /// Checks if the slice is empty.
-    ///
-    /// Returns `true` if the slice contains no text, `false` otherwise.
-    /// This is equivalent to checking if `len()` returns 0.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use piece_table::PieceTable;
-    /// let mut pt = PieceTable::new("hello");
-    /// pt.delete(0..5);
-    /// let slice = pt.create_slice();
-    /// assert!(slice.is_empty());
-    /// ```
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
-    }
-
-    /// Creates a sub-slice from this slice.
-    ///
-    /// This method allows you to create a new `PTableSlice` that represents a portion of the current slice.
-    /// The `range` argument specifies the byte offsets within *this slice* (not the original `PieceTable`)
-    /// that the new slice should cover.
-    ///
-    /// If the specified range is invalid (e.g., `start` > `end`, or the range is out of bounds),
-    /// this method returns `None`. It also returns `None` if the resulting slice would be empty.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use piece_table::PieceTable;
-    /// let pt = PieceTable::new("hello world");
-    /// let slice = pt.slice(0..11); // "hello world"
-    /// let sub_slice = slice.slice(0..5).unwrap(); // "hello"
-    /// assert_eq!(sub_slice.to_string(), "hello");
-    /// ```
-    pub fn slice(&self, range: Range<usize>) -> Option<PTableSlice<'ptable>> {
-        let mut new_nodes = Vec::new();
-        let mut byte_idx = 0;
-        let mut remaining = range.end - range.start;
-        let start_offset = range.start;
-
-        for node in &self.nodes {
-            let node_len = node.range.len();
-
-            if byte_idx + node_len > start_offset {
-                let node_start = start_offset.saturating_sub(byte_idx);
-
-                let node_end = if remaining < node_len - node_start {
-                    node_start + remaining
-                } else {
-                    node_len
-                };
-
-                if node_start < node_end {
-                    let mut new_node = node.clone();
-                    new_node.range.start += node_start;
-                    new_node.range.end = new_node.range.start + (node_end - node_start);
-                    new_nodes.push(new_node);
-                    remaining -= node_end - node_start;
-                }
-            }
-
-            byte_idx += node_len;
-            if remaining == 0 {
-                break;
-            }
-        }
-
-        if new_nodes.is_empty() {
-            return None;
-        }
-
-        Some(PTableSlice {
-            nodes: new_nodes,
-            original: self.original,
-            added: self.added,
-            _marker: std::marker::PhantomData,
-        })
-    }
-}
-
-impl<'ptable> From<&PTableSlice<'ptable>> for String {
-    fn from(value: &PTableSlice<'ptable>) -> Self {
-        let mut result = String::new();
-        for node in &value.nodes {
-            match node.kind {
-                // SAFETY: Since value still valid, then its corresponding `PieceTable` is still
-                // valid and thus `added` is still valid.
-                NodeKind::Original => unsafe {
-                    result.push_str(&(&*value.original)[node.range.clone()])
-                },
-                NodeKind::Added => unsafe {
-                    result.push_str(str::from_utf8_unchecked(
-                        &(*value.added).as_bytes()[node.range.clone()],
-                    ));
-                },
-            }
-        }
-        result
-    }
-}
-
-impl<'ptable> Display for PTableSlice<'ptable> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", String::from(self))
-    }
-}
-
 impl<'ptable> PieceTable<'ptable> {
-    /// Creates an immutable snapshot of the `PieceTable`'s current state.
-    ///
-    /// This method captures the entire content of the `PieceTable` at the moment it is called
-    /// and returns it as a `PTableSlice`. The returned slice is immutable and will not reflect
-    /// any subsequent modifications (insertions, deletions) made to the original `PieceTable`.
-    /// This is useful for operations that require a consistent, unchanging view of the text,
-    /// such as for rendering, saving, or complex analysis.
-    ///
-    /// The lifetime of the returned slice is tied to the lifetime of the `PieceTable` itself,
-    /// ensuring that the underlying text data remains valid while still alowing for mutation
-    /// of the original `PieceTable`.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// # use piece_table::PieceTable;
-    /// let mut pt = PieceTable::new("hello");
-    /// let snapshot = pt.create_slice();
-    /// assert_eq!(snapshot.to_string(), "hello");
-    ///
-    /// pt.insert(" world", 5);
-    /// assert_eq!(pt.to_string(), "hello world");
-    /// assert_eq!(snapshot.to_string(), "hello");
-    /// ```
-    pub fn create_slice(&self) -> PTableSlice<'ptable> {
-        PTableSlice {
-            nodes: self.nodes.iter().cloned().collect(),
-            original: self.original as *const str,
-            added: &self.added as *const _,
-            _marker: std::marker::PhantomData,
-        }
-    }
-
     /// Creates a new `PieceTable` from an initial string slice.
     ///
     /// This is the primary constructor for the `PieceTable`. It initializes the table with the
@@ -423,37 +262,6 @@ impl<'ptable> PieceTable<'ptable> {
         }
     }
 
-    /// Deletes all nodes which are entirely contained within the specified range
-    ///
-    /// Any nodes which are only partially in the range will not be deleted and must be dealt with
-    /// by the caller.
-    fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: &Range<usize>) {
-        let mut start = None;
-        let mut end = None;
-        let mut byte_idx = byte_idx;
-
-        for i in idx..self.nodes.len() {
-            let node = &self.nodes[i];
-            let node_len = node.range.len();
-
-            if byte_idx >= range.start && byte_idx + node_len <= range.end {
-                if start.is_none() {
-                    start = Some(i);
-                }
-                end = Some(i);
-            }
-
-            byte_idx += node_len;
-            if byte_idx >= range.end {
-                break;
-            }
-        }
-
-        if let (Some(first), Some(last)) = (start, end) {
-            self.nodes.drain(first..=last);
-        }
-    }
-
     /// Replaces a range of text with a new string.
     ///
     /// This method first deletes the text starting at `offset` up to`data.len()` bytes, and then
@@ -475,6 +283,39 @@ impl<'ptable> PieceTable<'ptable> {
         println!("{self:?}");
         self.insert(data, offset);
         println!("{self:?}");
+    }
+
+    /// Creates an immutable snapshot of the `PieceTable`'s current state.
+    ///
+    /// This method captures the entire content of the `PieceTable` at the moment it is called
+    /// and returns it as a `PTableSlice`. The returned slice is immutable and will not reflect
+    /// any subsequent modifications (insertions, deletions) made to the original `PieceTable`.
+    /// This is useful for operations that require a consistent, unchanging view of the text,
+    /// such as for rendering, saving, or complex analysis.
+    ///
+    /// The lifetime of the returned slice is tied to the lifetime of the `PieceTable` itself,
+    /// ensuring that the underlying text data remains valid while still alowing for mutation
+    /// of the original `PieceTable`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use piece_table::PieceTable;
+    /// let mut pt = PieceTable::new("hello");
+    /// let snapshot = pt.create_slice();
+    /// assert_eq!(snapshot.to_string(), "hello");
+    ///
+    /// pt.insert(" world", 5);
+    /// assert_eq!(pt.to_string(), "hello world");
+    /// assert_eq!(snapshot.to_string(), "hello");
+    /// ```
+    pub fn create_slice(&self) -> PTableSlice<'ptable> {
+        PTableSlice {
+            nodes: self.nodes.iter().cloned().collect(),
+            original: self.original as *const str,
+            added: &self.added as *const _,
+            _marker: std::marker::PhantomData,
+        }
     }
 
     /// Creates an immutable slice of the `PieceTable` for a given byte range.
@@ -553,6 +394,37 @@ impl<'ptable> PieceTable<'ptable> {
             original: self.original as *const str,
             added: &self.added as *const _,
             _marker: std::marker::PhantomData,
+        }
+    }
+
+    /// Deletes all nodes which are entirely contained within the specified range
+    ///
+    /// Any nodes which are only partially in the range will not be deleted and must be dealt with
+    /// by the caller.
+    fn delete_complete_nodes(&mut self, idx: usize, byte_idx: usize, range: &Range<usize>) {
+        let mut start = None;
+        let mut end = None;
+        let mut byte_idx = byte_idx;
+
+        for i in idx..self.nodes.len() {
+            let node = &self.nodes[i];
+            let node_len = node.range.len();
+
+            if byte_idx >= range.start && byte_idx + node_len <= range.end {
+                if start.is_none() {
+                    start = Some(i);
+                }
+                end = Some(i);
+            }
+
+            byte_idx += node_len;
+            if byte_idx >= range.end {
+                break;
+            }
+        }
+
+        if let (Some(first), Some(last)) = (start, end) {
+            self.nodes.drain(first..=last);
         }
     }
 
@@ -669,6 +541,134 @@ impl<'a> PartialEq<&str> for PieceTable<'a> {
 impl<'a> PartialOrd for PieceTable<'a> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.to_string().cmp(&other.to_string()))
+    }
+}
+
+impl<'ptable> PTableSlice<'ptable> {
+    /// Returns the total length of the text in the slice, in bytes.
+    ///
+    /// This method iterates through all the nodes in the slice and sums up their individual lengths.
+    /// The length is calculated based on the byte ranges of the underlying text pieces, not on the
+    /// number of characters.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use piece_table::PieceTable;
+    /// let pt = PieceTable::new("hello world");
+    /// let slice = pt.slice(0..5);
+    /// assert_eq!(slice.len(), 5);
+    /// ```
+    pub fn len(&self) -> usize {
+        self.nodes.iter().map(|n| n.range.len()).sum()
+    }
+
+    /// Checks if the slice is empty.
+    ///
+    /// Returns `true` if the slice contains no text, `false` otherwise.
+    /// This is equivalent to checking if `len()` returns 0.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use piece_table::PieceTable;
+    /// let mut pt = PieceTable::new("hello");
+    /// pt.delete(0..5);
+    /// let slice = pt.create_slice();
+    /// assert!(slice.is_empty());
+    /// ```
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Creates a sub-slice from this slice.
+    ///
+    /// This method allows you to create a new `PTableSlice` that represents a portion of the current slice.
+    /// The `range` argument specifies the byte offsets within *this slice* (not the original `PieceTable`)
+    /// that the new slice should cover.
+    ///
+    /// If the specified range is invalid (e.g., `start` > `end`, or the range is out of bounds),
+    /// this method returns `None`. It also returns `None` if the resulting slice would be empty.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// # use piece_table::PieceTable;
+    /// let pt = PieceTable::new("hello world");
+    /// let slice = pt.slice(0..11); // "hello world"
+    /// let sub_slice = slice.slice(0..5).unwrap(); // "hello"
+    /// assert_eq!(sub_slice.to_string(), "hello");
+    /// ```
+    pub fn slice(&self, range: Range<usize>) -> Option<PTableSlice<'ptable>> {
+        let mut new_nodes = Vec::new();
+        let mut byte_idx = 0;
+        let mut remaining = range.end - range.start;
+        let start_offset = range.start;
+
+        for node in &self.nodes {
+            let node_len = node.range.len();
+
+            if byte_idx + node_len > start_offset {
+                let node_start = start_offset.saturating_sub(byte_idx);
+
+                let node_end = if remaining < node_len - node_start {
+                    node_start + remaining
+                } else {
+                    node_len
+                };
+
+                if node_start < node_end {
+                    let mut new_node = node.clone();
+                    new_node.range.start += node_start;
+                    new_node.range.end = new_node.range.start + (node_end - node_start);
+                    new_nodes.push(new_node);
+                    remaining -= node_end - node_start;
+                }
+            }
+
+            byte_idx += node_len;
+            if remaining == 0 {
+                break;
+            }
+        }
+
+        if new_nodes.is_empty() {
+            return None;
+        }
+
+        Some(PTableSlice {
+            nodes: new_nodes,
+            original: self.original,
+            added: self.added,
+            _marker: std::marker::PhantomData,
+        })
+    }
+}
+
+impl<'ptable> From<&PTableSlice<'ptable>> for String {
+    fn from(value: &PTableSlice<'ptable>) -> Self {
+        let mut result = String::new();
+        for node in &value.nodes {
+            match node.kind {
+                // SAFETY: Since value still valid, then its corresponding `PieceTable` is still
+                // valid and thus `added` is still valid.
+                NodeKind::Original => unsafe {
+                    result.push_str(&(&*value.original)[node.range.clone()])
+                },
+                NodeKind::Added => unsafe {
+                    result.push_str(str::from_utf8_unchecked(
+                        &(*value.added).as_bytes()[node.range.clone()],
+                    ));
+                },
+            }
+        }
+        result
+    }
+}
+
+impl<'ptable> Display for PTableSlice<'ptable> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", String::from(self))
     }
 }
 
