@@ -282,11 +282,8 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     pub fn replace(&mut self, data: &str, offset: usize) {
         let end = (offset + data.len()).min(self.len() - 1);
-        println!("{} {}", offset, end);
         self.delete(offset..end);
-        println!("{self:?}");
         self.insert(data, offset);
-        println!("{self:?}");
     }
 
     /// Creates an immutable snapshot of the `PieceTable`'s current state.
