@@ -90,12 +90,119 @@ Note that the only characters that have been tested so far are one-byte ascii ch
 - String: ~0.7μs (fastest)
 - PieceTable: ~190μs (86x slower)
 
+## Remove Character
+
+### Random Remove
+- Rope: ~242ns
+- String: ~21μs (87x slower than Rope)
+- PieceTable: ~292μs (1,206x slower than Rope)
+
+### Start Remove
+- Rope: ~164ns
+- String: ~42μs (256x slower)
+- PieceTable: ~195μs (1,189x slower)
+
+### Middle Remove
+- Rope: ~191ns
+- String: ~17μs (89x slower)
+- PieceTable: ~238μs (1,246x slower)
+
+### End Remove
+- Rope: ~197ns
+- String: ~6ns (fastest)
+- PieceTable: ~23ns (8.6x faster than Rope)
+
+## Remove Small Text ("a")
+
+### Random Remove
+- Rope: ~183ns
+- String: ~265μs (1,448x slower)
+- PieceTable: ~251μs (1,372x slower)
+
+### Start Remove
+- Rope: ~159ns
+- String: ~632μs (3,975x slower)
+- PieceTable: ~203μs (1,277x slower)
+
+### Middle Remove
+- Rope: ~184ns
+- String: ~238μs (1,293x slower)
+- PieceTable: ~185μs (similar to Rope)
+
+### End Remove
+- Rope: ~167ns
+- String: ~572ps (fastest)
+- PieceTable: ~23ns (7.3x faster than Rope)
+
+## Remove Medium Text ("This is some text.")
+
+### Random Remove
+- Rope: ~183ns
+- String: ~265μs (1,448x slower)
+- PieceTable: ~251μs (1,372x slower)
+
+### Start Remove
+- Rope: ~159ns
+- String: ~632μs (3,975x slower)
+- PieceTable: ~203μs (1,277x slower)
+
+### Middle Remove
+- Rope: ~184ns
+- String: ~238μs (1,293x slower)
+- PieceTable: ~185μs (similar to Rope)
+
+### End Remove
+- Rope: ~167ns
+- String: ~572ps (fastest)
+- PieceTable: ~23ns (7.3x faster than Rope)
+
+## Remove Large Text (file contents)
+
+### Random Remove
+- Rope: ~2.1μs
+- String: ~42ms (20,000x slower)
+- PieceTable: ~1.2ms (571x slower)
+
+### Start Remove
+- Rope: ~1.6μs
+- String: ~273ms (170,625x slower)
+- PieceTable: ~858μs (536x slower)
+
+### Middle Remove
+- Rope: ~2.0μs
+- String: ~16ms (8,000x slower)
+- PieceTable: ~903μs (452x slower)
+
+### End Remove
+- Rope: ~1.6μs
+- String: ~1.6μs (similar to Rope)
+- PieceTable: ~219μs (200x slower)
+
+## Remove Initial After Clone
+
+- Rope: ~903ns
+- String: ~22μs (24x slower)
+- PieceTable: ~179μs (198x slower)
+
 ## Conclusion
 
+### Insert Operations
 1. Rope is consistently fast for most insertion operations (except end inserts). This makes sense given its balanced tree structure.
 2. String is fastest for end insertions but very slow for other operations. This makes sense since in strings, inserting at the end requires at most a reallocation, and at best a byte write and updating the length which is basically instant.
 3. PieceTable shows the most varied performance:
    - Fastest for start inserts (beating both Rope and String)
    - Slowest for middle/random inserts
    - Competitive for end inserts
-The excellent start insert performance comes from direct access to the first node and VecDeque's circular nature, while middle inserts suffer from node traversal and splitting overhead.
+The start insert performance comes from direct access to the first node and VecDeque's circular nature, while middle inserts suffer from node traversal and splitting overhead.
+
+### Remove Operations
+1. Rope maintains consistent performance across all remove operations, showing its balanced structure works well for deletions too.
+2. String shows extreme performance variations:
+   - Fastest for end removes (often just updating length)
+   - Extremely slow for start/middle removes (requiring memory shifts)
+   - Particularly bad for large text removals in the middle/start
+3. PieceTable shows interesting patterns:
+   - Excellent performance for end removes (better than Rope)
+   - Competitive performance for middle removes with small/medium text
+   - Generally slower than Rope for random/start removes
+   - Very slow for character removals
