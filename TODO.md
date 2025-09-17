@@ -72,12 +72,12 @@ The goal is to implement additional query operations that are available in Rope 
 
 ### Subtasks
 
-*   **[ ] Implement `byte()` function:**
+*   **[x] Implement `byte()` function:**
     *   **Description:** Add a method to get the byte at a specific position in the PieceTable.
     *   **Action:** Implement `pub fn byte(&self, byte_index: usize) -> Option<u8>` in `PieceTable` struct.
     *   **Context:** This was removed from queries.rs benchmarks as it's not yet supported.
 
-*   **[ ] Implement `char()` function:**
+*   **[x] Implement `char()` function:**
     *   **Description:** Add a method to get the character at a specific position in the PieceTable.
     *   **Action:** Implement `pub fn char(&self, char_index: usize) -> Option<char>` in `PieceTable` struct.
     *   **Context:** This was removed from queries.rs benchmarks as it's not yet supported.

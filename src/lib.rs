@@ -398,6 +398,40 @@ impl<'ptable> PieceTable<'ptable> {
         }
     }
 
+    pub fn byte(&self, at: usize) -> Option<u8> {
+        if let Some((idx, byte_idx)) = self.find_node(at) {
+            let offset = at - byte_idx;
+            let node = &self.nodes[idx];
+
+            let byte = match node.kind {
+                NodeKind::Original => self.original.as_bytes()[node.range.start + offset],
+                NodeKind::Added => self.added.as_bytes()[node.range.start + offset],
+            };
+
+            Some(byte)
+        } else {
+            None
+        }
+    }
+
+    pub fn char(&self, at: usize) -> Option<char> {
+        if let Some((idx, byte_idx)) = self.find_node(at) {
+            let offset = at - byte_idx;
+            let node = &self.nodes[idx];
+
+            if let Some(byte) = match node.kind {
+                NodeKind::Original => self.original[node.range.start + offset..].chars().next(),
+                NodeKind::Added => self.added[node.range.start + offset..].chars().next(),
+            } {
+                Some(byte)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    }
+
     /// Deletes all nodes which are entirely contained within the specified range
     ///
     /// Any nodes which are only partially in the range will not be deleted and must be dealt with
@@ -917,6 +951,56 @@ mod tests {
         let pt2 = PieceTable::new("apple");
         assert!(pt1 <= pt2);
         assert!(pt1 >= pt2);
+    }
+
+    #[test]
+    fn byte() {
+        let pt = PieceTable::new("abcd");
+
+        assert_eq!(Some('a' as u8), pt.byte(0));
+        assert_eq!(Some('b' as u8), pt.byte(1));
+        assert_eq!(Some('c' as u8), pt.byte(2));
+        assert_eq!(Some('d' as u8), pt.byte(3));
+        assert_eq!(None, pt.byte(4));
+        assert_eq!(None, pt.byte(5));
+        assert_eq!(None, pt.byte(usize::MAX));
+    }
+
+    #[test]
+    fn byte_of_added() {
+        let mut pt = PieceTable::new("abcd");
+        pt.replace("hello!", 0);
+
+        assert_eq!(Some('h' as u8), pt.byte(0));
+        assert_eq!(Some('e' as u8), pt.byte(1));
+        assert_eq!(Some('l' as u8), pt.byte(2));
+        assert_eq!(Some('l' as u8), pt.byte(3));
+        assert_eq!(Some('o' as u8), pt.byte(4));
+        assert_eq!(Some('!' as u8), pt.byte(5));
+    }
+
+    #[test]
+    fn char() {
+        let pt = PieceTable::new("abcd");
+
+        assert_eq!(Some('a'), pt.char(0));
+        assert_eq!(Some('b'), pt.char(1));
+        assert_eq!(Some('c'), pt.char(2));
+        assert_eq!(Some('d'), pt.char(3));
+        assert_eq!(None, pt.char(4));
+    }
+
+    #[test]
+    fn char_of_added() {
+        let mut pt = PieceTable::new("abcd");
+        pt.replace("hello!", 0);
+
+        assert_eq!(Some('h'), pt.char(0));
+        assert_eq!(Some('e'), pt.char(1));
+        assert_eq!(Some('l'), pt.char(2));
+        assert_eq!(Some('l'), pt.char(3));
+        assert_eq!(Some('o'), pt.char(4));
+        assert_eq!(Some('!'), pt.char(5));
     }
 }
 
