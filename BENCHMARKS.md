@@ -218,7 +218,7 @@ Note that the only characters that have been tested so far are one-byte ascii ch
 #### Byte Count
 - Rope: ~6.8ns
 - String: ~46ps (148x faster than Rope)
-- PieceTable: ~91μs (1,338,235x slower than Rope)
+- PieceTable: ~46ps (150x slower than Rope)
 
 #### Line Count
 - Rope: ~6.6ns
@@ -251,4 +251,4 @@ The start insert performance comes from direct access to the first node and VecD
 ### Query operations
 
 1. Rope's slicing depends on the text size, while piece table seems to have a somewhat stable performance regardless of text size.
-1. Rope has optimizations for length, line count, etc. Piece table's implementation is *very* slow for now.
+2. PieceTable's byte length is as fast as string's length, which is just reading a usize and is basically instant.

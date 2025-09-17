@@ -29,6 +29,7 @@ pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
     nodes: VecDeque<Node>,
+    len: usize,
 }
 
 /// Represents a continuous slice of text in one of the two buffers
@@ -88,15 +89,11 @@ impl<'ptable> PieceTable<'ptable> {
             original: string,
             added: String::new(),
             nodes,
+            len: string.len(),
         }
     }
 
     /// Returns the total length of the text in the `PieceTable`, in bytes.
-    ///
-    /// This method calculates the total length by first converting the entire `PieceTable` to a `String`
-    /// and then getting its length. While this is straightforward, it can be inefficient for very large
-    /// texts as it involves concatenating all pieces. For performance-critical scenarios where only the
-    /// length is needed, a more optimized implementation could be considered.
     ///
     /// The length is in bytes, not characters. For multi-byte UTF-8 characters, the byte length
     /// will be greater than the character count.
@@ -112,7 +109,8 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.len(), 6);
     /// ```
     pub fn len(&self) -> usize {
-        self.to_string().len()
+        debug_assert_eq!(self.len, self.to_string().len());
+        self.len
     }
 
     /// Checks if the `PieceTable` is empty.
@@ -177,6 +175,8 @@ impl<'ptable> PieceTable<'ptable> {
         } else {
             self.nodes.push_back(node);
         }
+
+        self.len += c.len_utf8();
     }
 
     /// Inserts a string slice at the specified byte offset.
@@ -222,6 +222,8 @@ impl<'ptable> PieceTable<'ptable> {
         } else {
             self.nodes.push_back(node);
         }
+
+        self.len += data.len();
     }
 
     /// Deletes a range of text specified by byte offsets.
@@ -260,6 +262,8 @@ impl<'ptable> PieceTable<'ptable> {
                 self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
             }
         }
+
+        self.len -= range.len();
     }
 
     /// Replaces a range of text with a new string.
