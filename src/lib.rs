@@ -42,6 +42,10 @@ impl<'ptable> PTableSlice<'ptable> {
         self.nodes.iter().map(|n| n.range.len()).sum()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     /// Create a sub-slice of this slice
     ///
     /// The range used to create the slice is in reference to the `PTableSlice`, not the
@@ -56,11 +60,7 @@ impl<'ptable> PTableSlice<'ptable> {
             let node_len = node.range.len();
 
             if byte_idx + node_len > start_offset {
-                let node_start = if byte_idx < start_offset {
-                    start_offset - byte_idx
-                } else {
-                    0
-                };
+                let node_start = start_offset.saturating_sub(byte_idx);
 
                 let node_end = if remaining < node_len - node_start {
                     node_start + remaining
@@ -138,7 +138,7 @@ impl<'ptable> PieceTable<'ptable> {
         let mut nodes = VecDeque::new();
         nodes.push_back(Node {
             kind: NodeKind::Original,
-            range: 0..string.as_bytes().len(),
+            range: 0..string.len(),
         });
 
         PieceTable {
@@ -152,9 +152,13 @@ impl<'ptable> PieceTable<'ptable> {
         self.to_string().len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn insert_char(&mut self, offset: usize, c: char) {
         // The node we'll insert
-        let node_range = self.added.as_bytes().len()..self.added.as_bytes().len() + c.len_utf8();
+        let node_range = self.added.len()..self.added.len() + c.len_utf8();
         self.added.push(c);
         let node = Node {
             kind: NodeKind::Added,
@@ -176,9 +180,8 @@ impl<'ptable> PieceTable<'ptable> {
 
     pub fn insert(&mut self, data: &str, offset: usize) {
         // The node we'll insert
-        let node_range =
-            self.added.as_bytes().len()..self.added.as_bytes().len() + data.as_bytes().len();
-        self.added.extend(data.chars());
+        let node_range = self.added.len()..self.added.len() + data.len();
+        self.added.push_str(data);
         let node = Node {
             kind: NodeKind::Added,
             range: node_range,
@@ -201,12 +204,12 @@ impl<'ptable> PieceTable<'ptable> {
         if let Some((start, byte_idx)) = self.find_node(range.start) {
             self.delete_complete_nodes(start, byte_idx, &range);
 
-            if let Some(node) = self.nodes.get(start) {
-                if byte_idx <= range.start && range.end <= byte_idx + node.range.len() {
-                    if self.split_node(start, range.end - byte_idx) {
-                        self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
-                    }
-                }
+            if let Some(node) = self.nodes.get(start)
+                && byte_idx <= range.start
+                && range.end <= byte_idx + node.range.len()
+                && self.split_node(start, range.end - byte_idx)
+            {
+                self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
             }
         }
     }
@@ -326,13 +329,13 @@ impl<'ptable> PieceTable<'ptable> {
     ///
     /// There are 3 cases:
     /// 1. `offset == 0`:
-    ///     In this case, nothing happens since there's nothing to do
+    ///    In this case, nothing happens since there's nothing to do
     ///
     /// 2. `offset >= node.range.len()`:
-    ///     Same as case 1
+    ///    Same as case 1
     ///
     /// 3. `offset != 0 && offset < range.len()`:
-    ///     The node is split
+    ///    The node is split
     fn split_node(&mut self, piece_idx: usize, offset: usize) -> bool {
         let first_node = self.nodes.get_mut(piece_idx).unwrap();
 
@@ -400,7 +403,7 @@ impl<'a> From<PieceTable<'a>> for String {
 
 impl<'a> PartialEq for PieceTable<'a> {
     fn eq(&self, other: &Self) -> bool {
-        self.to_string() == other.to_string()
+        *other == self.to_string()
     }
 }
 
