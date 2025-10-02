@@ -1202,3 +1202,11 @@ mod property_tests {
         }
     }
 }
+
+// TODO maybe move this into a bench.rs so it's clearly separate?
+#[cfg(feature = "bench")]
+impl PieceTable<'_> {
+    pub fn find_node_bench(&self, offset: usize) -> Option<(usize, usize)> {
+        self.find_node(offset)
+    }
+}
