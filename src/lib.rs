@@ -1,14 +1,13 @@
-use std::{collections::VecDeque, fmt::Display, ops::Range};
+use std::{fmt::Display, ops::Range};
 
 use crate::{
-    boolean_vec::BooleanVec,
     interface::EditableText,
     nodes::{Node, NodeKind, Nodes},
 };
 
 pub mod baseline;
-mod boolean_vec;
 pub mod interface;
+mod nodekind_vec;
 
 pub(crate) mod nodes;
 
@@ -31,7 +30,7 @@ pub(crate) mod nodes;
 ///   only referenced by `Node`s.
 /// - The sequence of `Node`s in `nodes` always represents the current, correct state of the
 ///   entire text. Concatenating the text from all nodes, in order, yields the full document.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
@@ -148,9 +147,8 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     pub fn insert_char(&mut self, offset: usize, c: char) {
         // The node we'll insert
-        let node_range = self.added.len()..self.added.len() + c.len_utf8();
-        self.added.push(c);
         let node = Node::new(NodeKind::Added, self.added.len(), c.len_utf8());
+        self.added.push(c);
 
         if let Some((node_idx, node_pos)) = self.find_node(offset) {
             let insert_idx = if self.split_node(node_idx, offset - node_pos) {
@@ -192,12 +190,8 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     pub fn insert(&mut self, data: &str, offset: usize) {
         // The node we'll insert
-        let node_range = self.added.len()..self.added.len() + data.len();
+        let node = Node::new(NodeKind::Added, self.added.len(), data.len());
         self.added.push_str(data);
-        let node = Node {
-            kind: NodeKind::Added,
-            range: node_range,
-        };
 
         if let Some((node_idx, node_pos)) = self.find_node(offset) {
             let insert_idx = if self.split_node(node_idx, offset - node_pos) {
@@ -244,10 +238,10 @@ impl<'ptable> PieceTable<'ptable> {
 
             if let Some(node) = self.nodes.get(start)
                 && byte_idx <= range.start
-                && range.end <= byte_idx + node.range.len()
-                && self.split_node(start, range.end - byte_idx)
+                && range.end <= byte_idx + node.len
             {
-                self.nodes.get_mut(start).unwrap().range.end -= range.end - range.start;
+                self.split_node(start, range.end - byte_idx);
+                *self.nodes.lens.get_mut(start).unwrap() -= range.len();
             }
         }
 
@@ -300,7 +294,7 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     pub fn create_slice(&self) -> PTableSlice<'ptable> {
         PTableSlice {
-            nodes: self.nodes.iter().cloned().collect(),
+            nodes: self.nodes.clone(),
             original: self.original as *const str,
             added: &self.added as *const _,
             _marker: std::marker::PhantomData,
@@ -336,46 +330,39 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(slice.to_string(), "bcdefg");
     /// ```
     pub fn slice(&self, range: Range<usize>) -> PTableSlice<'ptable> {
-        let mut nodes = Vec::new();
+        let mut nodes = Nodes::new();
         let mut byte_idx = 0;
-        let mut found_start = false;
+        let range_end = range.end.min(self.len());
 
         for node in &self.nodes {
-            let node_len = node.range.len();
+            let node_len = node.len;
             let node_start = byte_idx;
             let node_end = byte_idx + node_len;
 
             // Check if node intersects with the range
-            if node_end > range.start && node_start < range.end {
-                if found_start && node_end < range.end {
-                    // Middle node - copy as-is
-                    nodes.push(node.clone());
-                }
-                if !found_start {
-                    // First node in range - may need to adjust start
-                    let start_offset = range.start.saturating_sub(node_start);
-                    let mut new_node = node.clone();
-                    new_node.range.start += start_offset;
+            if node_end > range.start && node_start < range_end {
+                let mut new_node = node.clone();
 
-                    if node_end >= range.end {
-                        new_node.range.end -= node_end - range.end;
-                        nodes.push(new_node);
-                        found_start = true;
-                    } else {
-                        nodes.push(new_node);
-                        found_start = true;
-                    }
-                } else if node_end >= range.end {
-                    // Last node in range - may need to adjust end
-                    let end_offset = node_end - range.end;
-                    let mut new_node = node.clone();
-                    new_node.range.end -= end_offset;
-                    nodes.push(new_node);
-                    break;
+                // Adjust the start of the node if the range starts within this node
+                if range.start > node_start {
+                    let start_offset = range.start - node_start;
+                    new_node.start += start_offset;
+                    new_node.len -= start_offset;
                 }
+
+                // Adjust the end of the node if the range ends within this node
+                if range_end < node_end {
+                    let end_offset = node_end - range_end;
+                    new_node.len -= end_offset;
+                }
+
+                nodes.push(new_node);
             }
 
             byte_idx = node_end;
+            if byte_idx >= range_end {
+                break;
+            }
         }
 
         PTableSlice {
@@ -389,11 +376,11 @@ impl<'ptable> PieceTable<'ptable> {
     pub fn byte(&self, at: usize) -> Option<u8> {
         if let Some((idx, byte_idx)) = self.find_node(at) {
             let offset = at - byte_idx;
-            let node = &self.nodes[idx];
+            let node = &self.nodes.get(idx).unwrap();
 
             let byte = match node.kind {
-                NodeKind::Original => self.original.as_bytes()[node.range.start + offset],
-                NodeKind::Added => self.added.as_bytes()[node.range.start + offset],
+                NodeKind::Original => self.original.as_bytes()[node.start + offset],
+                NodeKind::Added => self.added.as_bytes()[node.start + offset],
             };
 
             Some(byte)
@@ -405,11 +392,11 @@ impl<'ptable> PieceTable<'ptable> {
     pub fn char(&self, at: usize) -> Option<char> {
         if let Some((idx, byte_idx)) = self.find_node(at) {
             let offset = at - byte_idx;
-            let node = &self.nodes[idx];
+            let node = &self.nodes.get(idx).unwrap();
 
             if let Some(byte) = match node.kind {
-                NodeKind::Original => self.original[node.range.start + offset..].chars().next(),
-                NodeKind::Added => self.added[node.range.start + offset..].chars().next(),
+                NodeKind::Original => self.original[node.start + offset..].chars().next(),
+                NodeKind::Added => self.added[node.start + offset..].chars().next(),
             } {
                 Some(byte)
             } else {
@@ -430,8 +417,8 @@ impl<'ptable> PieceTable<'ptable> {
         let mut byte_idx = byte_idx;
 
         for i in idx..self.nodes.len() {
-            let node = &self.nodes[i];
-            let node_len = node.range.len();
+            let node = &self.nodes.get(i).unwrap();
+            let node_len = node.len;
 
             if byte_idx >= range.start && byte_idx + node_len <= range.end {
                 if start.is_none() {
@@ -447,7 +434,7 @@ impl<'ptable> PieceTable<'ptable> {
         }
 
         if let (Some(first), Some(last)) = (start, end) {
-            self.nodes.drain(first..=last);
+            self.nodes.remove_range(first..=last);
         }
     }
 
@@ -455,11 +442,11 @@ impl<'ptable> PieceTable<'ptable> {
     fn find_node(&self, offset: usize) -> Option<(usize, usize)> {
         let mut byte_idx = 0;
 
-        for (idx, node) in self.nodes.iter().enumerate() {
-            if byte_idx + node.range.len() > offset {
+        for (idx, node) in self.nodes.into_iter().enumerate() {
+            if byte_idx + node.len > offset {
                 return Some((idx, byte_idx));
             }
-            byte_idx += node.range.len();
+            byte_idx += node.len;
         }
 
         None
@@ -477,20 +464,22 @@ impl<'ptable> PieceTable<'ptable> {
     /// 3. `offset != 0 && offset < range.len()`:
     ///    The node is split
     fn split_node(&mut self, piece_idx: usize, offset: usize) -> bool {
-        let first_node = self.nodes.get_mut(piece_idx).unwrap();
+        let mut first_node = self.nodes.get(piece_idx).unwrap();
 
-        if offset == 0 {
+        let split = if offset == 0 {
             false
-        } else if first_node.range.len() > offset {
+        } else if first_node.len > offset {
             let mut second_node = first_node.clone();
-            first_node.range.end -= first_node.range.len() - offset;
-            second_node.range.start += offset;
+            first_node.len = offset;
+            second_node.start += offset;
+            second_node.len -= offset;
             self.nodes.insert(piece_idx + 1, second_node);
             true
         } else {
-            first_node.range.end -= offset - 1;
             false
-        }
+        };
+        self.nodes.set(piece_idx, first_node);
+        split
     }
 }
 
@@ -515,13 +504,18 @@ impl<'a> Display for PieceTable<'a> {
                 f,
                 "{}",
                 match node.kind {
-                    NodeKind::Original => unsafe {
-                        self.original
-                            .get_unchecked(node.range.start..node.range.end)
-                    },
-                    NodeKind::Added => unsafe {
-                        self.added.get_unchecked(node.range.start..node.range.end)
-                    },
+                    NodeKind::Original => {
+                        debug_assert!(
+                            node.start <= self.original.len() && node.end() <= self.original.len()
+                        );
+                        unsafe { self.original.get_unchecked(node.start..node.end()) }
+                    }
+                    NodeKind::Added => {
+                        debug_assert!(
+                            node.start <= self.added.len() && node.end() <= self.added.len()
+                        );
+                        unsafe { self.added.get_unchecked(node.start..node.end()) }
+                    }
                 }
             )?;
         }
@@ -583,7 +577,7 @@ impl<'ptable> PTableSlice<'ptable> {
     /// assert_eq!(slice.len(), 5);
     /// ```
     pub fn len(&self) -> usize {
-        self.nodes.iter().map(|n| n.range.len()).sum()
+        self.nodes.into_iter().map(|n| n.len).sum()
     }
 
     /// Checks if the slice is empty.
@@ -623,34 +617,41 @@ impl<'ptable> PTableSlice<'ptable> {
     /// assert_eq!(sub_slice.to_string(), "hello");
     /// ```
     pub fn slice(&self, range: Range<usize>) -> Option<PTableSlice<'ptable>> {
-        let mut new_nodes = Vec::new();
+        if range.start >= self.len() || range.start >= range.end {
+            return None;
+        }
+
+        let range_end = range.end.min(self.len());
+        let mut new_nodes = Nodes::new();
         let mut byte_idx = 0;
-        let mut remaining = range.end - range.start;
-        let start_offset = range.start;
 
         for node in &self.nodes {
-            let node_len = node.range.len();
+            let node_len = node.len;
+            let node_start = byte_idx;
+            let node_end = byte_idx + node_len;
 
-            if byte_idx + node_len > start_offset {
-                let node_start = start_offset.saturating_sub(byte_idx);
+            // Check if this node overlaps with the requested range
+            if node_end > range.start && node_start < range_end {
+                let mut new_node = node.clone();
 
-                let node_end = if remaining < node_len - node_start {
-                    node_start + remaining
-                } else {
-                    node_len
-                };
-
-                if node_start < node_end {
-                    let mut new_node = node.clone();
-                    new_node.range.start += node_start;
-                    new_node.range.end = new_node.range.start + (node_end - node_start);
-                    new_nodes.push(new_node);
-                    remaining -= node_end - node_start;
+                // Adjust the start of the node if the range starts within this node
+                if range.start > node_start {
+                    let start_offset = range.start - node_start;
+                    new_node.start += start_offset;
+                    new_node.len -= start_offset;
                 }
+
+                // Adjust the end of the node if the range ends within this node
+                if range_end < node_end {
+                    let end_offset = node_end - range_end;
+                    new_node.len -= end_offset;
+                }
+
+                new_nodes.push_back(new_node);
             }
 
-            byte_idx += node_len;
-            if remaining == 0 {
+            byte_idx = node_end;
+            if byte_idx >= range_end {
                 break;
             }
         }
@@ -675,14 +676,10 @@ impl<'ptable> From<&PTableSlice<'ptable>> for String {
             match node.kind {
                 // SAFETY: Since value still valid, then its corresponding `PieceTable` is still
                 // valid and thus `added` is still valid.
-                NodeKind::Original => unsafe {
-                    result.push_str(&(&*value.original)[node.range.clone()])
-                },
-                NodeKind::Added => unsafe {
-                    result.push_str(str::from_utf8_unchecked(
-                        &(*value.added).as_bytes()[node.range.clone()],
-                    ));
-                },
+                NodeKind::Original => result.push_str(unsafe { &(&*value.original)[node.range()] }),
+                NodeKind::Added => result.push_str(unsafe {
+                    str::from_utf8_unchecked(&(*value.added).as_bytes()[node.range()])
+                }),
             }
         }
         result
