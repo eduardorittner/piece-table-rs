@@ -1,9 +1,16 @@
 use std::{collections::VecDeque, fmt::Display, ops::Range};
 
-use crate::interface::EditableText;
+use crate::{
+    boolean_vec::BooleanVec,
+    interface::EditableText,
+    nodes::{Node, NodeKind, Nodes},
+};
 
 pub mod baseline;
+mod boolean_vec;
 pub mod interface;
+
+pub(crate) mod nodes;
 
 /// A piece table data structure for efficient string manipulation.
 ///
@@ -24,26 +31,12 @@ pub mod interface;
 ///   only referenced by `Node`s.
 /// - The sequence of `Node`s in `nodes` always represents the current, correct state of the
 ///   entire text. Concatenating the text from all nodes, in order, yields the full document.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct PieceTable<'a> {
     original: &'a str,
     added: String,
-    nodes: VecDeque<Node>,
+    nodes: Nodes,
     len: usize,
-}
-
-/// Represents a continuous slice of text in one of the two buffers
-#[derive(Debug, Clone)]
-struct Node {
-    kind: NodeKind,
-    range: Range<usize>,
-}
-
-/// What buffer the data from this `Node` is stored in
-#[derive(Debug, Clone, Copy)]
-enum NodeKind {
-    Original,
-    Added,
 }
 
 /// An immutable view into a PieceTable.
@@ -54,7 +47,7 @@ enum NodeKind {
 /// that require a stable view of the text, such as iteration or complex transformations.
 #[derive(Debug)]
 pub struct PTableSlice<'ptable> {
-    nodes: Vec<Node>,
+    nodes: Nodes,
     original: *const str,
     added: *const String, // SAFETY: must never be mutated, only read
     _marker: std::marker::PhantomData<&'ptable ()>,
@@ -79,11 +72,9 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.to_string(), initial_text);
     /// ```
     pub fn new(string: &'ptable str) -> Self {
-        let mut nodes = VecDeque::new();
-        nodes.push_back(Node {
-            kind: NodeKind::Original,
-            range: 0..string.len(),
-        });
+        let mut nodes = Nodes::new();
+
+        nodes.push_back(Node::new(NodeKind::Original, 0, string.len()));
 
         PieceTable {
             original: string,
@@ -159,10 +150,7 @@ impl<'ptable> PieceTable<'ptable> {
         // The node we'll insert
         let node_range = self.added.len()..self.added.len() + c.len_utf8();
         self.added.push(c);
-        let node = Node {
-            kind: NodeKind::Added,
-            range: node_range,
-        };
+        let node = Node::new(NodeKind::Added, self.added.len(), c.len_utf8());
 
         if let Some((node_idx, node_pos)) = self.find_node(offset) {
             let insert_idx = if self.split_node(node_idx, offset - node_pos) {
