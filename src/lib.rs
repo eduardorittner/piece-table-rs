@@ -3,11 +3,13 @@ use std::{fmt::Display, ops::Range};
 use crate::{
     interface::EditableText,
     nodes::{Node, NodeKind, Nodes},
+    simd::ByteChunk,
 };
 
 pub mod baseline;
 pub mod interface;
 mod nodekind_vec;
+mod simd;
 
 pub(crate) mod nodes;
 
@@ -439,7 +441,7 @@ impl<'ptable> PieceTable<'ptable> {
     }
 
     /// Internal helper method to find the node that contains the char at `offset`
-    fn find_node(&self, offset: usize) -> Option<(usize, usize)> {
+    fn find_node<Chunk: ByteChunk>(&self, offset: usize) -> Option<(usize, usize)> {
         let mut byte_idx = 0;
 
         for (idx, node) in self.nodes.into_iter().enumerate() {

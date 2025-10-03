@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["bench"]
+default = ["simd", "bench"]
 bench = [] # Exposes private functions as pub for benchmarks
+simd = []
 
 [dependencies]
 fnv = "1.0.7"

@@ -1,6 +1,8 @@
 use std::ops::{Range, RangeBounds};
 
 use crate::nodekind_vec::NodeKindVec;
+#[cfg(all(feature = "simd", target_arch = "aarch64"))]
+use crate::simd::{ByteChunk, Chunk};
 
 /// What buffer the data from this `Node` is stored in
 ///
@@ -143,6 +145,12 @@ impl Nodes {
                 *self.lens.get_unchecked(idx),
             ))
         }
+    }
+
+    // TODO maybe move this into a trait?
+    #[cfg(all(feature = "simd", target_arch = "aarch64"))]
+    pub(crate) fn len_chunks(&self) -> (&[[usize; Chunk::SIZE]], &[usize]) {
+        self.lens.as_chunks()
     }
 }
 
