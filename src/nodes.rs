@@ -1,4 +1,7 @@
-use std::ops::{Range, RangeBounds};
+use std::{
+    ops::{Add, Range, RangeBounds},
+    simd::{num::SimdUint, usizex8, usizex64},
+};
 
 use crate::nodekind_vec::NodeKindVec;
 #[cfg(all(feature = "simd", target_arch = "aarch64"))]
@@ -147,11 +150,163 @@ impl Nodes {
         }
     }
 
-    // TODO maybe move this into a trait?
-    #[cfg(all(feature = "simd", target_arch = "aarch64"))]
-    pub(crate) fn len_chunks(&self) -> (&[[usize; Chunk::SIZE]], &[usize]) {
-        self.lens.as_chunks()
+    pub(crate) fn find_node(&self, offset: usize) -> Option<NodeHandle> {
+        let (lanes, leftover) = self.lens.as_chunks();
+
+        let (len, idx) = match find_node_64(lanes, offset) {
+            NodeSearch::Found(NodeHandle { idx, text_idx }) => {
+                return Some(NodeHandle { idx, text_idx });
+            }
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => (text_idx, idx),
+        };
+
+        let (lanes, leftover) = leftover.as_chunks();
+
+        let (len, idx) = match find_node_8(lanes, offset) {
+            NodeSearch::Found(NodeHandle { idx, text_idx }) => {
+                return Some((NodeHandle { idx, text_idx }) + NodeHandle { text_idx: len, idx });
+            }
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => (text_idx, idx),
+        };
+
+        match find_node_1(leftover, offset) {
+            NodeSearch::Found(NodeHandle { idx, text_idx }) => Some(NodeHandle { idx, text_idx }),
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => None,
+        }
     }
+}
+
+#[derive(Clone, Copy)]
+/// The result of a `Node` search
+enum NodeSearch {
+    /// Found `Node`
+    Found(NodeHandle),
+    /// First `Node` which wasn't searched
+    FirstRemainingNode(NodeHandle),
+}
+
+#[derive(Debug, Clone, Copy)]
+/// A Handle to a `Node`
+// TODO: I'd like to think of a better/consisten naming scheme? Not sure about this
+pub struct NodeHandle {
+    pub idx: usize,      // Index where node is stored in `Nodes`
+    pub text_idx: usize, // Byte index of the first byte of the `Node` in the final text
+}
+
+impl Add<NodeHandle> for NodeHandle {
+    type Output = NodeHandle;
+
+    fn add(self, rhs: NodeHandle) -> Self::Output {
+        NodeHandle {
+            idx: self.idx + rhs.idx,
+            text_idx: self.text_idx + rhs.text_idx,
+        }
+    }
+}
+
+impl Add<NodeHandle> for NodeSearch {
+    type Output = NodeSearch;
+
+    fn add(self, rhs: NodeHandle) -> Self::Output {
+        match self {
+            NodeSearch::Found(NodeHandle { idx, text_idx }) => NodeSearch::Found(NodeHandle {
+                idx: idx + rhs.idx,
+                text_idx: text_idx + rhs.text_idx,
+            }),
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => {
+                NodeSearch::FirstRemainingNode(NodeHandle {
+                    idx: idx + rhs.idx,
+                    text_idx: text_idx + rhs.text_idx,
+                })
+            }
+        }
+    }
+}
+
+fn find_node_64(elems: &[[usize; 64]], offset: usize) -> NodeSearch {
+    const LANE_SIZE: usize = 64;
+    debug_assert!(elems.is_empty() || elems[0].len() == LANE_SIZE);
+
+    let mut byte_idx = 0;
+    let mut idx = 0;
+
+    for lane in elems {
+        let simd = usizex64::from_array(*lane);
+
+        let sum = simd.reduce_sum();
+
+        if byte_idx + sum > offset {
+            let (lanes, leftover) = lane.as_chunks();
+            let (first_node) = match find_node_8(lanes, offset).add(NodeHandle {
+                idx,
+                text_idx: byte_idx,
+            }) {
+                found @ NodeSearch::Found { .. } => return found,
+                NodeSearch::FirstRemainingNode(node) => node,
+            };
+
+            return find_node_1(leftover, offset).add(first_node);
+        }
+
+        byte_idx += sum;
+        idx += LANE_SIZE;
+    }
+
+    NodeSearch::FirstRemainingNode(NodeHandle {
+        text_idx: byte_idx,
+        idx,
+    })
+}
+
+fn find_node_8(elems: &[[usize; 8]], offset: usize) -> NodeSearch {
+    const LANE_SIZE: usize = 8;
+    debug_assert!(elems.is_empty() || elems[0].len() == LANE_SIZE);
+
+    let mut byte_idx = 0;
+    let mut idx = 0;
+
+    for lane in elems {
+        let simd = usizex8::from_array(*lane);
+
+        let sum = simd.reduce_sum();
+
+        if byte_idx + sum > offset {
+            return find_node_1(lane, offset).add(NodeHandle {
+                idx,
+                text_idx: byte_idx,
+            });
+        }
+
+        byte_idx += sum;
+        idx += LANE_SIZE;
+    }
+
+    NodeSearch::FirstRemainingNode(NodeHandle {
+        text_idx: byte_idx,
+        idx,
+    })
+}
+
+fn find_node_1(elems: &[usize], offset: usize) -> NodeSearch {
+    let mut byte_idx = 0;
+    let mut idx = 0;
+
+    for len in elems {
+        if byte_idx + len > offset {
+            return NodeSearch::Found(NodeHandle {
+                text_idx: byte_idx,
+                idx: idx,
+            });
+        }
+
+        byte_idx += len;
+        idx += 1;
+    }
+
+    NodeSearch::FirstRemainingNode(NodeHandle {
+        text_idx: byte_idx,
+        idx,
+    })
 }
 
 impl<'nodes> IntoIterator for &'nodes Nodes {

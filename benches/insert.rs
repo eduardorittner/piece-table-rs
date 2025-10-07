@@ -87,7 +87,7 @@ fn ptable_insert_char(c: &mut Criterion) {
     group.bench_function("random", |bench| {
         let mut ptable = PieceTable::new(TEXT);
         bench.iter(|| {
-            let len = ptable.len();
+            let len = ptable.text_len();
             ptable.insert_char(random::<u64>() as usize % len, 'a')
         })
     });
@@ -102,7 +102,7 @@ fn ptable_insert_char(c: &mut Criterion) {
     group.bench_function("middle", |bench| {
         let mut ptable = PieceTable::new(TEXT);
         bench.iter(|| {
-            let len = ptable.len();
+            let len = ptable.text_len();
             ptable.insert_char(len / 2, 'a');
         })
     });
@@ -110,7 +110,7 @@ fn ptable_insert_char(c: &mut Criterion) {
     group.bench_function("end", |bench| {
         let mut ptable = PieceTable::new(TEXT);
         bench.iter(|| {
-            let len = ptable.len();
+            let len = ptable.text_len();
             ptable.insert_char(len, 'a');
         })
     });

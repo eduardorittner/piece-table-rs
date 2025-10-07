@@ -1,15 +1,19 @@
-use std::{fmt::Display, ops::Range};
+#![feature(portable_simd)]
+
+use std::{
+    fmt::Display,
+    ops::Range,
+    simd::{num::SimdUint, usizex64},
+};
 
 use crate::{
     interface::EditableText,
-    nodes::{Node, NodeKind, Nodes},
-    simd::ByteChunk,
+    nodes::{Node, NodeHandle, NodeKind, Nodes},
 };
 
 pub mod baseline;
 pub mod interface;
 mod nodekind_vec;
-mod simd;
 
 pub(crate) mod nodes;
 
@@ -85,6 +89,14 @@ impl<'ptable> PieceTable<'ptable> {
         }
     }
 
+    /// Returns the number of `Node`s in `self`
+    ///
+    /// Not to be confused with `.text_len()` which returns the number of bytes in the text
+    /// contained in `self`
+    pub fn len(&self) -> usize {
+        self.nodes.len()
+    }
+
     /// Returns the total length of the text in the `PieceTable`, in bytes.
     ///
     /// The length is in bytes, not characters. For multi-byte UTF-8 characters, the byte length
@@ -95,12 +107,12 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     /// # use piece_table::PieceTable;
     /// let pt = PieceTable::new("hello");
-    /// assert_eq!(pt.len(), 5);
+    /// assert_eq!(pt.text_len(), 5);
     ///
     /// let mut pt = PieceTable::new("héllo"); // 'é' is 2 bytes
-    /// assert_eq!(pt.len(), 6);
+    /// assert_eq!(pt.text_len(), 6);
     /// ```
-    pub fn len(&self) -> usize {
+    pub fn text_len(&self) -> usize {
         debug_assert_eq!(self.len, self.to_string().len());
         self.len
     }
@@ -115,13 +127,13 @@ impl<'ptable> PieceTable<'ptable> {
     /// ```
     /// # use piece_table::PieceTable;
     /// let mut pt = PieceTable::new("hello");
-    /// assert!(!pt.is_empty());
+    /// assert!(!pt.text_is_empty());
     ///
     /// pt.delete(0..5);
-    /// assert!(pt.is_empty());
+    /// assert!(pt.text_is_empty());
     /// ```
-    pub fn is_empty(&self) -> bool {
-        self.len() == 0
+    pub fn text_is_empty(&self) -> bool {
+        self.text_len() == 0
     }
 
     /// Inserts a single character at the specified byte offset.
@@ -148,11 +160,16 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.to_string(), " world");
     /// ```
     pub fn insert_char(&mut self, offset: usize, c: char) {
+        println!("{self:?}: {self}");
         // The node we'll insert
         let node = Node::new(NodeKind::Added, self.added.len(), c.len_utf8());
         self.added.push(c);
 
-        if let Some((node_idx, node_pos)) = self.find_node(offset) {
+        if let Some(NodeHandle {
+            idx: node_idx,
+            text_idx: node_pos,
+        }) = self.find_node(offset)
+        {
             let insert_idx = if self.split_node(node_idx, offset - node_pos) {
                 node_idx + 1
             } else {
@@ -165,6 +182,7 @@ impl<'ptable> PieceTable<'ptable> {
         }
 
         self.len += c.len_utf8();
+        println!("{self:?}: {self}");
     }
 
     /// Inserts a string slice at the specified byte offset.
@@ -195,7 +213,11 @@ impl<'ptable> PieceTable<'ptable> {
         let node = Node::new(NodeKind::Added, self.added.len(), data.len());
         self.added.push_str(data);
 
-        if let Some((node_idx, node_pos)) = self.find_node(offset) {
+        if let Some(NodeHandle {
+            idx: node_idx,
+            text_idx: node_pos,
+        }) = self.find_node(offset)
+        {
             let insert_idx = if self.split_node(node_idx, offset - node_pos) {
                 node_idx + 1
             } else {
@@ -235,7 +257,11 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.to_string(), "ae");
     /// ```
     pub fn delete(&mut self, range: Range<usize>) {
-        if let Some((start, byte_idx)) = self.find_node(range.start) {
+        if let Some(NodeHandle {
+            idx: start,
+            text_idx: byte_idx,
+        }) = self.find_node(range.start)
+        {
             self.delete_complete_nodes(start, byte_idx, &range);
 
             if let Some(node) = self.nodes.get(start)
@@ -265,7 +291,7 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.to_string(), "hello, cruel world!");
     /// ```
     pub fn replace(&mut self, data: &str, offset: usize) {
-        let end = (offset + data.len()).min(self.len() - 1);
+        let end = (offset + data.len()).min(self.text_len() - 1);
         self.delete(offset..end);
         self.insert(data, offset);
     }
@@ -334,7 +360,7 @@ impl<'ptable> PieceTable<'ptable> {
     pub fn slice(&self, range: Range<usize>) -> PTableSlice<'ptable> {
         let mut nodes = Nodes::new();
         let mut byte_idx = 0;
-        let range_end = range.end.min(self.len());
+        let range_end = range.end.min(self.text_len());
 
         for node in &self.nodes {
             let node_len = node.len;
@@ -376,7 +402,11 @@ impl<'ptable> PieceTable<'ptable> {
     }
 
     pub fn byte(&self, at: usize) -> Option<u8> {
-        if let Some((idx, byte_idx)) = self.find_node(at) {
+        if let Some(NodeHandle {
+            idx,
+            text_idx: byte_idx,
+        }) = self.find_node(at)
+        {
             let offset = at - byte_idx;
             let node = &self.nodes.get(idx).unwrap();
 
@@ -392,7 +422,11 @@ impl<'ptable> PieceTable<'ptable> {
     }
 
     pub fn char(&self, at: usize) -> Option<char> {
-        if let Some((idx, byte_idx)) = self.find_node(at) {
+        if let Some(NodeHandle {
+            idx,
+            text_idx: byte_idx,
+        }) = self.find_node(at)
+        {
             let offset = at - byte_idx;
             let node = &self.nodes.get(idx).unwrap();
 
@@ -441,17 +475,8 @@ impl<'ptable> PieceTable<'ptable> {
     }
 
     /// Internal helper method to find the node that contains the char at `offset`
-    fn find_node<Chunk: ByteChunk>(&self, offset: usize) -> Option<(usize, usize)> {
-        let mut byte_idx = 0;
-
-        for (idx, node) in self.nodes.into_iter().enumerate() {
-            if byte_idx + node.len > offset {
-                return Some((idx, byte_idx));
-            }
-            byte_idx += node.len;
-        }
-
-        None
+    fn find_node(&self, offset: usize) -> Option<NodeHandle> {
+        self.nodes.find_node(offset)
     }
 
     /// Tries to split a node and returns `true` if succeeded and `false` otherwise
@@ -703,6 +728,52 @@ mod tests {
         let piece_table = PieceTable::new(string);
 
         assert_eq!(string, piece_table.to_string());
+    }
+
+    #[test]
+    fn insert_char_end() {
+        let original = "hello, ";
+        let mut piece_table = PieceTable::new(original);
+
+        piece_table.insert_char(piece_table.text_len(), 'w');
+        piece_table.insert_char(piece_table.text_len(), 'o');
+        piece_table.insert_char(piece_table.text_len(), 'r');
+        piece_table.insert_char(piece_table.text_len(), 'l');
+        piece_table.insert_char(piece_table.text_len(), 'd');
+        piece_table.insert_char(piece_table.text_len(), '!');
+
+        assert_eq!("hello, world!", piece_table.to_string());
+    }
+
+    #[test]
+    fn insert_char_start() {
+        let original = "world!";
+        let mut piece_table = PieceTable::new(original);
+
+        piece_table.insert_char(0, ' ');
+        piece_table.insert_char(0, ',');
+        piece_table.insert_char(0, 'o');
+        piece_table.insert_char(0, 'l');
+        piece_table.insert_char(0, 'l');
+        piece_table.insert_char(0, 'e');
+        piece_table.insert_char(0, 'h');
+
+        assert_eq!("hello, world!", piece_table.to_string());
+    }
+
+    #[test]
+    fn insert_char_middle() {
+        let original = "hellld!";
+        let mut piece_table = PieceTable::new(original);
+
+        piece_table.insert_char(4, 'r');
+        piece_table.insert_char(4, 'o');
+        piece_table.insert_char(4, 'w');
+        piece_table.insert_char(4, ' ');
+        piece_table.insert_char(4, ',');
+        piece_table.insert_char(4, 'o');
+
+        assert_eq!("hello, world!", piece_table.to_string());
     }
 
     #[test]
@@ -1208,7 +1279,7 @@ mod property_tests {
 // TODO maybe move this into a bench.rs so it's clearly separate?
 #[cfg(feature = "bench")]
 impl PieceTable<'_> {
-    pub fn find_node_bench(&self, offset: usize) -> Option<(usize, usize)> {
+    pub fn find_node_bench(&self, offset: usize) -> Option<NodeHandle> {
         self.find_node(offset)
     }
 }
