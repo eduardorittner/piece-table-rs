@@ -490,8 +490,14 @@ impl<'ptable> PieceTable<'ptable> {
     ///
     /// 3. `offset != 0 && offset < range.len()`:
     ///    The node is split
-    fn split_node(&mut self, piece_idx: usize, offset: usize) -> bool {
-        let mut first_node = self.nodes.get(piece_idx).unwrap();
+    fn split_node(&mut self, node_idx: usize, offset: usize) -> bool {
+        debug_assert!(
+            self.len() >= node_idx,
+            "self.len() is {} and node_idx is {}",
+            self.len(),
+            node_idx
+        );
+        let mut first_node = self.nodes.get(node_idx).unwrap();
 
         let split = if offset == 0 {
             false
@@ -500,12 +506,12 @@ impl<'ptable> PieceTable<'ptable> {
             first_node.len = offset;
             second_node.start += offset;
             second_node.len -= offset;
-            self.nodes.insert(piece_idx + 1, second_node);
+            self.nodes.insert(node_idx + 1, second_node);
             true
         } else {
             false
         };
-        self.nodes.set(piece_idx, first_node);
+        self.nodes.set(node_idx, first_node);
         split
     }
 }
