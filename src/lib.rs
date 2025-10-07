@@ -160,7 +160,6 @@ impl<'ptable> PieceTable<'ptable> {
     /// assert_eq!(pt.to_string(), " world");
     /// ```
     pub fn insert_char(&mut self, offset: usize, c: char) {
-        println!("{self:?}: {self}");
         // The node we'll insert
         let node = Node::new(NodeKind::Added, self.added.len(), c.len_utf8());
         self.added.push(c);
@@ -182,7 +181,6 @@ impl<'ptable> PieceTable<'ptable> {
         }
 
         self.len += c.len_utf8();
-        println!("{self:?}: {self}");
     }
 
     /// Inserts a string slice at the specified byte offset.
@@ -492,7 +490,7 @@ impl<'ptable> PieceTable<'ptable> {
     ///    The node is split
     fn split_node(&mut self, node_idx: usize, offset: usize) -> bool {
         debug_assert!(
-            self.len() >= node_idx,
+            self.len() > node_idx,
             "self.len() is {} and node_idx is {}",
             self.len(),
             node_idx
@@ -1065,6 +1063,117 @@ mod tests {
         assert_eq!(Some('l'), pt.char(3));
         assert_eq!(Some('o'), pt.char(4));
         assert_eq!(Some('!'), pt.char(5));
+    }
+
+    #[test]
+    fn find_node_simple() {
+        let pt = PieceTable::new("hello");
+
+        assert!(pt.find_node(0).is_some());
+        assert!(pt.find_node(4).is_some());
+        assert!(pt.find_node(5).is_none());
+    }
+
+    #[test]
+    fn find_node_after_insertions() {
+        let mut pt = PieceTable::new("hello");
+        pt.insert(" world", 5);
+        assert_eq!(pt.text_len(), 11);
+
+        for i in 0..11 {
+            let result = pt.find_node(i);
+            assert!(result.is_some());
+            if let Some(handle) = result {
+                assert!(handle.idx < pt.len());
+            }
+        }
+
+        assert!(pt.find_node(11).is_none());
+    }
+
+    #[test]
+    fn find_node_after_multiple_insertions() {
+        let mut pt = PieceTable::new("a");
+        pt.insert("b", 1);
+        pt.insert("c", 2);
+        pt.insert("d", 3);
+
+        assert_eq!(pt.text_len(), 4);
+        assert_eq!(pt.to_string(), "abcd");
+
+        for i in 0..4 {
+            let result = pt.find_node(i);
+            assert!(result.is_some());
+            if let Some(handle) = result {
+                assert!(handle.idx < pt.len());
+            }
+        }
+
+        assert!(pt.find_node(4).is_none());
+    }
+
+    #[test]
+    fn find_node_edge_cases() {
+        let pt = PieceTable::new("");
+        assert!(pt.find_node(0).is_none());
+
+        let pt = PieceTable::new("a");
+        assert!(pt.find_node(0).is_some());
+        assert!(pt.find_node(1).is_none());
+
+        let mut pt = PieceTable::new("ab");
+        pt.insert("cd", 1); // "acdb"
+        assert_eq!(pt.to_string(), "acdb");
+
+        for i in 0..4 {
+            let result = pt.find_node(i);
+            assert!(result.is_some());
+            if let Some(handle) = result {
+                assert!(handle.idx < pt.len());
+            }
+        }
+        assert!(pt.find_node(4).is_none());
+    }
+
+    #[test]
+    fn find_node_random_insertions() {
+        let mut pt = PieceTable::new("test");
+        pt.insert("1", 2); // "te1st"
+        pt.insert("2", 0); // "2te1st"
+        pt.insert("3", 6); // "2te1st3"
+
+        assert_eq!(pt.text_len(), 7);
+        assert_eq!(pt.to_string(), "2te1st3");
+
+        for i in 0..7 {
+            let result = pt.find_node(i);
+            assert!(result.is_some());
+            if let Some(handle) = result {
+                assert!(handle.idx < pt.len());
+            }
+        }
+
+        assert!(pt.find_node(7).is_none());
+    }
+
+    #[test]
+    fn find_node_debug_simple() {
+        let mut ptable = PieceTable::new("test");
+
+        ptable.insert_char(0, 'x'); // "xtest"
+        ptable.insert_char(1, 'x'); // "xxtest"
+        ptable.insert_char(2, 'x'); // "xxxtest"
+        ptable.insert_char(3, 'x'); // "xxxxtest"
+        ptable.insert_char(4, 'x'); // "xxxxtest"
+        ptable.insert_char(5, 'x'); // "xxxxxtest"
+        ptable.insert_char(6, 'x'); // "xxxxxxtest"
+
+        for offset in 0..ptable.text_len() {
+            let result = ptable.find_node(offset);
+            if let Some(handle) = result {
+                assert!(handle.idx < ptable.len());
+            }
+        }
     }
 }
 

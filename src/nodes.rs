@@ -157,21 +157,32 @@ impl Nodes {
             NodeSearch::Found(NodeHandle { idx, text_idx }) => {
                 return Some(NodeHandle { idx, text_idx });
             }
-            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => (text_idx, idx),
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => {
+                (text_idx, idx)
+            },
         };
 
         let (lanes, leftover) = leftover.as_chunks();
 
         let (len, idx) = match find_node_8(lanes, offset) {
-            NodeSearch::Found(NodeHandle { idx, text_idx }) => {
-                return Some((NodeHandle { idx, text_idx }) + NodeHandle { text_idx: len, idx });
+            NodeSearch::Found(NodeHandle { idx: found_idx, text_idx: found_text_idx }) => {
+                let lhs = NodeHandle { idx: found_idx, text_idx: found_text_idx };
+                let rhs = NodeHandle { text_idx: len, idx: idx };
+                let result = lhs + rhs;
+                return Some(result);
             }
-            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => (text_idx, idx),
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => {
+                (text_idx, idx)
+            },
         };
 
         match find_node_1(leftover, offset) {
-            NodeSearch::Found(NodeHandle { idx, text_idx }) => Some(NodeHandle { idx, text_idx }),
-            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => None,
+            NodeSearch::Found(NodeHandle { idx, text_idx }) => {
+                Some(NodeHandle { idx, text_idx })
+            },
+            NodeSearch::FirstRemainingNode(NodeHandle { idx, text_idx }) => {
+                None
+            },
         }
     }
 }
